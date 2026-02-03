@@ -1,0 +1,12 @@
+.DS_Store
+local_config.yaml
+config.yaml
+oauth_creds/
+play_logs/
+dump.rdb
+node_modules/
+.env
+__pycache__/
+*.pyc
+github_deploy_key
+github_deploy_key.pub
