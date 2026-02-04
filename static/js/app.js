@@ -108,7 +108,7 @@ _.extend(Socket.prototype, {
 
 console.log(location.hostname);
 let proto = 'wss';
-if (location.hostname === 'localhost') {
+if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
     proto = 'ws';
 }
 socket = new Socket(proto + '://'+location.host+'/socket/');
