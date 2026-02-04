@@ -1,0 +1,58 @@
+SPOTIFY_CLIENT_ID: "233eb82d89634238a16e6d8b9df40bd9"
+SPOTIFY_CLIENT_SECRET: "a31d3f9643d34a47ba275900264a4eba"
+SPOTIFY_USERNAME: prosecho
+SPOTIFY_USERID: 27a212a5377047b08536f68196dbdd54
+GOOGLE_CLIENT_ID: 222781788701-9bc37s1s29fnr0lbf5i31d097321eam9.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET: tDHS_0RevoHdZ4ERpxJmaGXe
+YT_API_KEY: AIzaSyC_RuxXQ99bWcQb4W9o6VQ_inPZCuJikBY
+DEBUG: False
+SECRET_KEY: "6b2528a9003d45a3ebad0f7c430f98686e9dbcf0f5ae651e52531abf2547e8aab4acddbe57929748a120af4a2c2ccf3544b1" #python -c "import os;print os.urandom(50).encode('hex')"
+PYTHON_RAVEN_DSN: "" #TODO
+JAVASCRIPT_RAVEN_DSN: "" #TODO
+LOG_FORMAT: "%(asctime)-15s %(name)-10s [%(levelname)s] %(message)s"
+BENDER_USE_DM: False
+DM_QUEUE_LOW: 999
+DM_ABS_LOW: 0
+DM_NUM_TRACKS_PER_USER: 0
+DM_USER_EXPIRE_SECONDS: 604800 #1 week
+DM_PENALTY: 900
+BUNDLES:
+    js:
+        prefix: 'js/'
+        files:
+            - jquery-1.10.2.js
+            - underscore.js
+            - bootstrap.js
+            - backbone.js
+            - app.js
+            - sc.js
+    css:
+        prefix: 'css/'
+        files:
+            - bootstrap.min.css
+            - font-awesome.min.css
+            - app.css
+HEADERS_AUTH: yay
+CACHE_BUSTER: 2017-10-20
+SMTP_HOST: smtp.gmail.com
+SMTP_USER: itsandre@spotify.com
+SMTP_PASS: ifsewgkkuyomrcvg
+SMTP_FROM: itsandre@spotify.com
+SOUNDCLOUD_CLIENT_ID: 8267fd360bf3864e78a43456a6b26d74
+AIRHORN_MAX: 99
+AIRHORN_EXPIRE_SEC: 20
+AIRHORN_EXPIRE_COUNT: 2
+AIRHORN_LIST_MIN_LEN: 5
+USE_BENDER: True
+FREE_AIRHORN: 99
+BENDER_CLUSTERS: True
+BENDER_JAMS: True
+BENDER_REGIONS:
+    - US
+BENDER_DISCOVER_PLAYLIST: 3Qx1GjX3Mfz3WE8SBVXzfH
+TOP_TRACKS_REGION: US
+MAX_BENDER_MINUTES: 120
+LOG_DIR: './play_logs'
+OAUTH_CACHE_PATH: './oauth_creds'
+HOSTNAME: andre-backend.spotify.net
+BENDER_FILTER_TIME: 604800

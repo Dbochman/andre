@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>It's Prosecco!</title>
+        <link rel="shortcut icon" href="/static/favicon.png">
+    </head>
+    <body>
+        <div id="make-player">make player click me!</div>
+        <label>Username:</label> <input type="text" value="72lions" id="input-connection-username" style="width: 100%;"><br/>
+        <label>Password:</label> <input type="password" value="renaissance" id="input-connection-password" style="width: 100%;"><br/>
+        <label>Connection Url:</label><br/>
+        <input type="text" readonly value="ws://shared-accesspoint-a1.shared.cloud.spotify.net:4999/" id="input-connection-url" style="width: 100%; background-color: #f3f3f3"><br/>
+        <script src="js/spotify/libs/swfobject.js"></script>
+        <div id="ytapiplayer"></div>
+        <div id="bridge"></div>
+        <div id="player"></div>
+        <div id="html5audio"></div>
+        <script src="//code.jquery.com/jquery-1.11.0.min.js"></script>
+        <script src="//code.jquery.com/jquery-migrate-1.2.1.min.js"></script>
+        <script type="text/javascript" src="js/spotify/namespaces.js"></script>
+        <script type="text/javascript" src="js/spotify/debugger.js"></script>
+        <script type="text/javascript" src="js/spotify/storage.js"></script>
+        <script type="text/javascript" src="js/spotify/utils/utils.js"></script>
+        <script type="text/javascript" src="js/spotify/utils/base62.js"></script>
+        <script type="text/javascript" src="js/spotify/utils/base64.js"></script>
+        <script type="text/javascript" src="js/spotify/calls/hermes.js"></script>
+        <script type="text/javascript" src="js/spotify/calls/simple.js"></script>
+        <script type="text/javascript" src="js/spotify/errors/error.js"></script>
+        <script type="text/javascript" src="js/spotify/ratelimiter.js"></script>
+        <script type="text/javascript" src="js/spotify/calls/callsmanager.js"></script>
+        <script type="text/javascript" src="js/spotify/connectionmanager.js"></script>
+        <script type="text/javascript" src="js/spotify/protobuf/schemas.js"></script>
+        <script type="text/javascript" src="js/spotify/managers/protobufschemasmanager.js"></script>
+        <script type="text/javascript" src="js/spotify/worker.js"></script>
+        <script type="text/javascript" src="js/spotify/linkedlist.js"></script>
+        <script type="text/javascript" src="js/spotify/cache/simple.js"></script>
+        <script type="text/javascript" src="js/spotify/cache/packagestore.js"></script>
+        <script type="text/javascript" src="js/spotify/cache/cache.js"></script>
+        <script type="text/javascript" src="js/spotify/cache/types.js"></script>
+        <script type="text/javascript" src="js/spotify/events/events.js"></script>
+        <script type="text/javascript" src="js/spotify/uriresolvertypes.js"></script>
+        <script type="text/javascript" src="js/spotify/ajax.js"></script>
+        <script type="text/javascript" src="js/spotify/services/service.js"></script>
+        <script type="text/javascript" src="js/spotify/proto/data.js"></script>
+        <script type="text/javascript" src="js/spotify/link.js"></script>
+        <script type="text/javascript" src="js/spotify/logging/types.js"></script>
+        <script type="text/javascript" src="js/spotify/logging/trackend.js"></script>
+        <script type="text/javascript" src="js/spotify/logging/previewend.js"></script>
+        <script type="text/javascript" src="js/spotify/logging/trackprogress.js"></script>
+        <script type="text/javascript" src="js/spotify/logging/trackevent.js"></script>
+        <script type="text/javascript" src="js/spotify/logging/clientevent.js"></script>
+        <script type="text/javascript" src="js/spotify/logging/adend.js"></script>
+        <script type="text/javascript" src="js/spotify/logging/view.js"></script>
+        <script type="text/javascript" src="js/spotify/logging/logger.js"></script>
+        <script type="text/javascript" src="js/spotify/playertracker.js"></script>
+        <script type="text/javascript" src="js/spotify/protobuf/ieee754.js"></script>
+        <script type="text/javascript" src="js/spotify/protobuf/parser.js"></script>
+        <script type="text/javascript" src="js/spotify/protobuf/serialization.js"></script>
+        <script type="text/javascript" src="js/spotify/heartbeat.js"></script>
+        <script type="text/javascript" src="js/spotify/gateway.js"></script>
+        <script type="text/javascript" src="js/spotify/audio/audiostream.js"></script>
+        <script type="text/javascript" src="js/spotify/audio/audiomanager.js"></script>
+        <script type="text/javascript" src="js/spotify/audio/crossfader.js"></script>
+        <script type="text/javascript" src="js/spotify/dependencyobject.js"></script>
+        <script type="text/javascript" src="js/spotify/flash/bridge.js"></script>
+        <script type="text/javascript" src="js/spotify/websockets/bridge.js"></script>
+        <script type="text/javascript" src="js/spotify/websockets/client.js"></script>
+        <script type="text/javascript" src="js/spotify/events/eventtarget.js"></script>
+        <script type="text/javascript" src="js/spotify/protobuf/schema.js"></script>
+        <script type="text/javascript" src="js/spotify/hermes/cache.js"></script>
+        <script type="text/javascript" src="js/spotify/hermes/request.js"></script>
+        <script type="text/javascript" src="js/spotify/hermes/handler.js"></script>
+        <script type="text/javascript" src="js/spotify/gatewaytypes.js"></script>
+        <script type="text/javascript" src="js/spotify/playertypes.js"></script>
+        <script type="text/javascript" src="js/spotify/protocols.js"></script>
+        <script type="text/javascript" src="js/spotify/instance/instances.js"></script>
+        <script type="text/javascript" src="js/spotify/instance/instancefactory.js"></script>
+        <script type="text/javascript" src="js/spotify/instance/instancecache.js"></script>
+        <script type="text/javascript" src="js/spotify/features.js"></script>
+        <script type="text/javascript" src="js/spotify/flash/swfobject.js"></script>
+        <script type="text/javascript" src="js/spotify/flash/playerinterface.js"></script>
+        <script type="text/javascript" src="js/spotify/html5/playerinterface.js"></script>
+        <script type="text/javascript" src="js/spotify/parsers/search.js"></script>
+        <script type="text/javascript" src="js/spotify/parsers/metadata.js"></script>
+        <script type="text/javascript" src="js/spotify/parsers/search.js"></script>
+        <script type="text/javascript" src="js/spotify/parsers/suggest.js"></script>
+        <script type="text/javascript" src="js/spotify/parsers/playlist.js"></script>
+        <script type="text/javascript" src="js/spotify/parsers/social.js"></script>
+        <script type="text/javascript" src="js/spotify/parsers/facebook.js"></script>
+        <script type="text/javascript" src="js/spotify/parsers/url.js"></script>
+        <script type="text/javascript" src="js/spotify/services/base.js"></script>
+        <script type="text/javascript" src="js/spotify/services/time.js"></script>
+        <script type="text/javascript" src="js/spotify/services/suggest.js"></script>
+        <script type="text/javascript" src="js/spotify/services/appstore.js"></script>
+        <script type="text/javascript" src="js/spotify/services/popcount.js"></script>
+        <script type="text/javascript" src="js/spotify/services/metadata.js"></script>
+        <script type="text/javascript" src="js/spotify/services/playlist.js"></script>
+        <script type="text/javascript" src="js/spotify/services/search.js"></script>
+        <script type="text/javascript" src="js/spotify/services/searchhermes.js"></script>
+        <script type="text/javascript" src="js/spotify/services/toplist.js"></script>
+        <script type="text/javascript" src="js/spotify/services/user.js"></script>
+        <script type="text/javascript" src="js/spotify/services/social.js"></script>
+        <script type="text/javascript" src="js/spotify/services/socialgraph.js"></script>
+        <script type="text/javascript" src="js/spotify/services/facebook.js"></script>
+        <script type="text/javascript" src="js/spotify/services/songuriresolver.js"></script>
+        <script type="text/javascript" src="js/spotify/services/aduriresolver.js"></script>
+        <script type="text/javascript" src="js/spotify/services/previewsuriresolver.js"></script>
+        <script type="text/javascript" src="js/spotify/services/pubsub.js"></script>
+        <script type="text/javascript" src="js/spotify/services/presence.js"></script>
+        <script type="text/javascript" src="js/spotify/services/mergedprofile.js"></script>
+        <script type="text/javascript" src="js/spotify/services/inbox.js"></script>
+        <script type="text/javascript" src="js/spotify/sourceurls.js"></script>
+        <script type="text/javascript" src="js/spotify/services/facebook-publish.js"></script>
+        <script type="text/javascript" src="js/spotify/services/spirc.js"></script>
+        <script type="text/javascript" src="js/spotify/core.js"></script>
+        <script type="text/javascript" src="js/tokenizer.js"></script>
+        <script type="text/javascript" src="js/spotify_core.js"></script>
+    </body>
+</html>

@@ -1,24 +1,26 @@
 from gevent import monkey
 monkey.patch_all()
 
-import os
+import os.path
 import logging
 import json
 import datetime
 import hashlib
+import urllib
+import urllib2
 import socket as psocket
 import gevent
 import redis
 import requests
 import time
+import sets
 import psycopg2
-from urllib.parse import urlencode
 
 import spotipy.oauth2
 import spotipy
 
 from flask import Flask, request, render_template, session, redirect, jsonify, make_response
-from flask_assets import Environment, Bundle
+from flask.ext.assets import Environment, Bundle
 
 from config import CONF
 from db import DB
@@ -29,27 +31,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 assets = Environment(app)
 app.config['GOOGLE_DOMAIN'] = 'spotify.com'
-app.url_map.strict_slashes = False
-#auth = GoogleAuth(app)
+#auth = GoogleAuth(app) 
 
-def _get_authenticated_email():
-    email = session.get('email')
-    if email:
-        return email
-    if CONF.DEBUG and CONF.DEV_AUTH_EMAIL and request.host.startswith(('localhost', '127.0.0.1')):
-        session['email'] = CONF.DEV_AUTH_EMAIL
-        session['fullname'] = 'Dev User'
-        return session['email']
-    return None
-
-def _handle_websocket():
-    if request.environ.get('wsgi.websocket') is None:
-        return 'WebSocket required', 400
-    email = _get_authenticated_email()
-    if not email:
-        return 'Unauthorized', 401
-    MusicNamespace(email, 0).serve()
-    return ''
+print CONF
 
 def __setup_bundles():
     for name, conf in CONF.get('BUNDLES', {}).items():
@@ -63,20 +47,8 @@ __setup_bundles()
 d = DB(False)
 logger.setLevel(logging.DEBUG)
 
-def _redis_client():
-    redis_host = CONF.REDIS_HOST or 'localhost'
-    redis_port = int(CONF.REDIS_PORT) if CONF.REDIS_PORT else 6379
-    return redis.Redis(
-        host=redis_host,
-        port=redis_port,
-        decode_responses=True,
-        encoding_errors='surrogateescape',
-    )
-
-
 auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
-if not os.environ.get("SKIP_SPOTIFY_PREFETCH"):
-    auth.get_access_token()
+auth.get_access_token()
 
 #keeping a list of airhorns for mobile client
 airhorns = set()
@@ -131,19 +103,8 @@ class WebSocketManager(object):
                 msg = None
                 with gevent.Timeout(30, False):
                     msg = self._ws.receive()
-                if msg is None:
-                    if getattr(self._ws, 'closed', False):
-                        logger.info('WebSocket closed by client')
-                        break
-                    # No message yet (timeout); keep connection open.
-                    continue
-                if msg == '' and msg != '0':
-                    if getattr(self._ws, 'closed', False):
-                        logger.info('WebSocket closed by client')
-                        break
-                    continue
-                if isinstance(msg, bytes):
-                    msg = msg.decode('utf-8', 'ignore')
+                if not msg and msg != '0':
+                    break
                 T = msg[0]
                 if T == '1':
                     data = json.loads(msg[1:]) if len(msg) > 1 else None
@@ -151,59 +112,37 @@ class WebSocketManager(object):
                         continue
                     event = data[0]
                     args = data[1:]
-                    try:
-                        getattr(self, 'on_' + event.replace('-', '_'))(*args)
-                    except Exception:
-                        logger.exception('Socket handler error for event: %s', event)
+                    getattr(self, 'on_' + event.replace('-', '_'))(*args)
                 elif T == '0':
                     pass
                 else:
-                    print(T, msg)
-                    print('Invalid msg type')
+                    print T, msg
+                    print 'Invalid msg type'
                     return
-        except Exception:
-            logger.exception('WebSocket fatal error')
-            _ws_log('fatal error')
-            raise
         finally:
-            try:
-                self._ws.close()
-            except Exception:
-                logger.exception('WebSocket close failed')
-                _ws_log('close failed')
+            self._ws.close()
             gevent.killall(self._children)
 
 
 class MusicNamespace(WebSocketManager):
     def __init__(self, email, penalty):
         super(MusicNamespace, self).__init__()
-        print("MusicNamespace init")
+        print "MusicNamespace init"
         try:
             os.makedirs(CONF.OAUTH_CACHE_PATH)
         except Exception:
             pass
         self.logger = app.logger
         self.email = email
-        print(self.email)
+        print self.email 
         self.penalty = penalty
-        self.auth = None
-        if CONF.SPOTIFY_CLIENT_ID and CONF.SPOTIFY_CLIENT_SECRET:
-            try:
-                self.auth = spotipy.oauth2.SpotifyOAuth(
-                    CONF.SPOTIFY_CLIENT_ID,
-                    CONF.SPOTIFY_CLIENT_SECRET,
-                    SPOTIFY_REDIRECT_URI,
-                    "prosecco:%s" % email,
-                    scope="streaming user-read-currently-playing",
-                    cache_path="%s/%s" % (CONF.OAUTH_CACHE_PATH, email),
-                )
-            except Exception:
-                logger.exception('Failed to initialize Spotify OAuth; continuing without')
+        self.auth = spotipy.oauth2.SpotifyOAuth(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI,
+                                                "prosecco:%s" % email, scope="streaming user-read-currently-playing", cache_path="%s/%s" % (CONF.OAUTH_CACHE_PATH, email))
         self.spawn(self.listener)
         self.log('New namespace for {0}'.format(self.email))
 
     def listener(self):
-        r = _redis_client().pubsub()
+        r = redis.StrictRedis().pubsub()
         r.subscribe('MISC|update-pubsub')
         for m in r.listen():
             if m['type'] != 'message':
@@ -267,21 +206,12 @@ class MusicNamespace(WebSocketManager):
 
     def on_fetch_search_token(self):
         logger.debug("fetch search token")
-        if not CONF.SPOTIFY_CLIENT_ID or not CONF.SPOTIFY_CLIENT_SECRET:
-            logger.info('Spotify search token unavailable: missing client credentials')
-            return
-        try:
-            token = auth.get_access_token()
-            self.emit('search_token_update', dict(token=auth.token_info['access_token'],
-                                                time_left=int(auth.token_info['expires_at'] - time.time())))
-        except Exception:
-            logger.exception('Failed to fetch Spotify search token')
+        token = auth.get_access_token()
+        self.emit('search_token_update', dict(token=auth.token_info['access_token'],
+                                            time_left=int(auth.token_info['expires_at'] - time.time())))
 
     def on_fetch_auth_token(self):
         logger.debug("fetch auth token")
-        if not self.auth:
-            logger.info('Spotify auth unavailable for %s', self.email)
-            return
         token = self.auth.get_cached_token()
         if token:
             logger.debug("update")
@@ -380,7 +310,7 @@ class VolumeNamespace(WebSocketManager):
         self.emit('volume', str(d.set_volume(vol)))
 
     def listener(self):
-        r = _redis_client().pubsub()
+        r = redis.StrictRedis().pubsub()
         r.subscribe('MISC|update-pubsub')
         for m in r.listen():
             if m['type'] != 'message':
@@ -395,19 +325,16 @@ def inject_config():
     return dict(CONF=CONF)
 
 SAFE_PATHS = (u'/login/', u'/logout/', u'/playing/', u'/queue/', u'/volume/',
-              u'/guest', u'/guest/', u'/api/jammit/', u'/health', u'/health/',
-              u'/socket', u'/socket/',
+              u'/guest', u'/guest/', u'/api/jammit/',
               u'/authentication/callback', u'/token', u'/last/', u'/airhorns/', u'/z/')
 SAFE_PARAM_PATHS = (u'/history', u'/user_history', u'/user_jam_history', u'/search/v2', u'/add_song',
     u'/blast_airhorn', u'/airhorn_list', u'/queue/', u'/jam')
-VALID_HOSTS = (u'localhost:5000', u'127.0.0.1:5000', str(CONF.HOSTNAME)) if CONF.HOSTNAME else (u'localhost:5000', u'127.0.0.1:5000')
+VALID_HOSTS = (u'localhost:5000', unicode(CONF.HOSTNAME))
 
 
 @app.before_request
 def require_auth():
-    if request.path.startswith('/socket') and request.headers.get('Upgrade', '').lower() == 'websocket':
-        return _handle_websocket()
-    if CONF.HOSTNAME and request.host not in VALID_HOSTS:
+    if request.host not in VALID_HOSTS:
         return redirect('http://%s' % CONF.HOSTNAME)
     if request.path in SAFE_PATHS:
         return
@@ -417,11 +344,12 @@ def require_auth():
     if request.path.startswith('/static/'):
         return
     if 'email' not in session:
-        if CONF.DEBUG and CONF.DEV_AUTH_EMAIL and request.host.startswith('localhost'):
-            session['email'] = CONF.DEV_AUTH_EMAIL
-            session['fullname'] = 'Dev User'
-            return
-        return redirect('/login/')
+        default_email = 'test@spotify.com';
+        default_names = ['testy', 'mctesterface'];
+
+        session['email'] = request.headers.get('sso-mail', request.args.get('useremail', default_email))
+        session['fullname'] = request.headers.get('sso-givenname', default_names[0]) + ' ' + request.headers.get('sso-surname', default_names[1])
+        return
 
 
 @app.after_request
@@ -434,7 +362,6 @@ def add_cors_header(response):
         return response
     response.headers.set('Access-Control-Allow-Origin', '*')
     return response
-
 
 if CONF.DEBUG:
     REDIRECT_URI = "http://localhost:5000/authentication/callback"
@@ -464,7 +391,7 @@ def login():
                 response_type="code", client_id=CONF.GOOGLE_CLIENT_ID,
                 approval_prompt="auto", access_type="online")
     url = "https://accounts.google.com/o/oauth2/auth?{}".format(
-        urlencode(args))
+        urllib.urlencode(args))
     return redirect(url)
 
 
@@ -524,17 +451,6 @@ def playing():
     rv['now'] = datetime.datetime.now().isoformat()
     return jsonify(**rv)
 
-@app.route('/health')
-def health():
-    status = {'ok': True, 'time': datetime.datetime.now().isoformat()}
-    try:
-        _redis_client().ping()
-        status['redis'] = True
-    except Exception as exc:
-        status['ok'] = False
-        status['redis'] = False
-        status['redis_error'] = str(exc)
-    return jsonify(status), (200 if status['ok'] else 503)
 
 @app.route('/queue/')
 def queue():
@@ -560,17 +476,15 @@ def main():
     return render_template('main.html')
 
 
-@app.route('/socket')
 @app.route('/socket/')
 def socket():
-    if request.headers.get('Upgrade', '').lower() == 'websocket':
-        return _handle_websocket()
-    return 'WebSocket required', 400
+    MusicNamespace(session['email'], 0).serve()
+    return ''
 
 
 @app.route('/volume/')
 def volume():
-    print('VOLUME IN')
+    print 'VOLUME IN'
     VolumeNamespace().serve()
     return ''
 
@@ -602,7 +516,7 @@ def jam():
 def guest():
     if request.method == 'GET':
         return render_template('guest_login.html', failure=False)
-    print(request.values)
+    print request.values
     email = d.try_login(request.values.get('email', ''),
                         request.values.get('passwd', ''))
     if not email:

@@ -1,10 +1,5 @@
 import yaml, os, os.path, pprint, logging
 
-def _parse_env_bool(value):
-    if value is None:
-        return None
-    return value.strip().lower() in ("1", "true", "yes", "y", "on")
-
 class _Configuration(object):
     def __repr__(self):
         return pprint.pformat(dict((k, getattr(self, k))
@@ -32,32 +27,17 @@ def get_config_filenames():
 
 def __read_conf(*files):
     for f in files:
+        print f
         try:
-            with open(f, "r") as fh:
-                data = yaml.safe_load(fh) or {}
-            for k, v in data.items():
+            data = yaml.load(open(f))
+            print data
+            for k,v in data.items():
+                print k, v
                 setattr(CONF, k, v)
             logger.debug('Loaded file "{0}"'.format(f))
         except Exception as e:
+            print "failed", e
             logger.debug('Failed to load file "{0}" ({1})'.format(f, str(e)))
-
-    # Apply selected environment overrides after file load.
-    env_map = {
-        "DEBUG": ("DEBUG", _parse_env_bool),
-        "DEV_AUTH_EMAIL": ("DEV_AUTH_EMAIL", str),
-        "REDIS_HOST": ("REDIS_HOST", str),
-        "REDIS_PORT": ("REDIS_PORT", int),
-        "HOSTNAME": ("HOSTNAME", str),
-    }
-    for env_key, (conf_key, cast) in env_map.items():
-        if env_key in os.environ:
-            raw = os.environ.get(env_key)
-            if raw is None:
-                continue
-            try:
-                val = cast(raw) if cast is not None else raw
-                setattr(CONF, conf_key, val)
-            except Exception as e:
-                logger.debug('Failed to apply env override %s: %s', env_key, e)
+    print "CONF", CONF
 
 __read_conf(*get_config_filenames())

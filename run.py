@@ -14,5 +14,5 @@ server = WSGIServer(('', 5000), app,
                     handler_class=WebSocketHandler)
 
 if __name__ == '__main__':
-    print('Listening on http://localhost:5000/')
+    print 'Listening on http://localhost:5000/'
     server.serve_forever()

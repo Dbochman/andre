@@ -1,0 +1,14 @@
+id: andre
+description: Real Andre 
+system: andre
+owner: proseccohack
+visibility: private
+dependencies: []
+
+facts:
+  docs:
+  service_discovery:
+    - andre
+  role: andre  # IMPORTANT! Needed for provisioning!
+  lifecycle: experimental
+  helios_agent: true

@@ -1,0 +1,23 @@
+# This file controls the behaviour of the CI/CD pipelines.
+# See https://backstage.spotify.net/docs/tingle/tingle-templates/python-backend/
+
+version: 2
+
+template:
+  type: pythonBackend
+  pythonBackend:
+    gcpProject: spotify-prosecco
+    serviceInfo: service-info-andre.yaml
+
+notifications:
+  - ref: refs/heads/master
+    success:
+      slack:
+        - $author
+    failure:
+      slack:
+        - $author
+  - ref: refs/pull/.*/merge
+    failure:
+      slack:
+        - $author

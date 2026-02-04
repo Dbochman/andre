@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Andre</title>
+
+    {% assets "css" %}
+    <link rel="stylesheet" href="{{ ASSET_URL }}?{{CONF.CACHE_BUSTER}}" type="text/css">{% endassets %}
+    <script defer src="https://connect.soundcloud.com/sdk/sdk-3.1.2.js"></script>
+    <script defer src="https://www.youtube.com/iframe_api"></script>
+    <script defer type="text/javascript" src="/config.js"></script>
+    {% assets "js" %}
+        <script defer type="text/javascript" src="{{ ASSET_URL }}?{{CONF.CACHE_BUSTER}}"></script>
+    {% endassets %}
+        <link rel="shortcut icon" href="/static/favicon.png">
+    </head>
+    <body>
+        {%block body%}{%endblock%}
+        <script type="text/javascript">
+            var user = "{{session.email}}";
+        </script>
+        {%block postjs%}{%endblock%}
+        <div id="ytapiplayer"></div>
+    </body>
+</html>

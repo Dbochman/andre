@@ -1,11 +1,5 @@
 version: "3"
 services:
-  redis:
-    image: "redis:7"
-    container_name: "andre_redis"
-    ports:
-      - "6379:6379"
-
   db:
     image: "postgres:11"
     container_name: "my_postgres"
@@ -13,26 +7,15 @@ services:
       - "54320:5432"
     volumes:
       - my_dbdata:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_PASSWORD=postgres
 
   andre:
     build: .
     depends_on:
-      - redis
       - db
     ports:
-      - "5001:5000"
+      - "5000:5000"
     links:
       - db   
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - DEBUG=True
-      - DEV_AUTH_EMAIL=dev@example.com
-      - SKIP_SPOTIFY_PREFETCH=1
-      - HOSTNAME=localhost:5001
-      - PYTHONUNBUFFERED=1
 
 volumes:
   my_dbdata:

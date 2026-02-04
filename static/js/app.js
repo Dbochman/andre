@@ -98,6 +98,7 @@ _.extend(Socket.prototype, {
             }
         },
         onerror: function(ev){
+            //console.log('onerror', ev);
         },
         onclose: function(ev){
             this.reconnect();
@@ -106,7 +107,10 @@ _.extend(Socket.prototype, {
 });
 
 console.log(location.hostname);
-let proto = (location.protocol === 'https:') ? 'wss' : 'ws';
+let proto = 'wss';
+if (location.hostname === 'localhost') {
+    proto = 'ws';
+}
 socket = new Socket(proto + '://'+location.host+'/socket/');
 
 var Song = Backbone.Model.extend({
@@ -720,11 +724,6 @@ socket.on('do_airhorn', function(vol, name){
     console.log('DO AIRHORN EVENT');
     sort_airhorns(); // completion of all airhorn loading is asynchronous!
     vol = parseFloat(vol) * volume / 100;
-    if (context && context.state === 'suspended') {
-        context.resume().catch(function(e){
-            console.log('Airhorn resume failed', e);
-        });
-    }
     if (is_player) {
         console.log('AIRHOOORN');
         // pick a random airhorn
@@ -736,11 +735,6 @@ socket.on('do_airhorn', function(vol, name){
         //}
         console.log("AIRHORN NAME:" + name);
         var airhornData = airhorn_map[name];
-        if (!airhornData) {
-            console.log('Missing airhorn data for: ' + name);
-            console.log('Available horns:', Object.keys(airhorn_map));
-            return;
-        }
         playSound(airhornData, vol);
     }
     else {
@@ -1062,21 +1056,12 @@ function do_airhorn(){
         msg="Are you Santa?";
     }
     confirm_airhorn(msg, function(airhorn_choice){
-        if (context && context.state === 'suspended') {
-            context.resume().catch(function(e){
-                console.log('Airhorn resume failed', e);
-            });
-        }
+        console.log()
         socket.emit("airhorn", airhorn_choice);
     });
 }
 function do_free_airhorn(){
     confirm_dialog("Is this awesome airhorn worthy?", function(){
-        if (context && context.state === 'suspended') {
-            context.resume().catch(function(e){
-                console.log('Airhorn resume failed', e);
-            });
-        }
         socket.emit('free_airhorn');
     });
 }
@@ -1192,18 +1177,11 @@ function loadAirHorn(url) {
     var request = new XMLHttpRequest();
     request.open('GET', url, true);
     request.responseType = 'arraybuffer';
-    request.onerror = function() {
-        console.log('Airhorn request error for ' + url);
-    };
 
     // Decode asynchronously
     if (url !== undefined) {
     }
     request.onload = function() {
-        if (request.status !== 200) {
-            console.log('Airhorn request failed: ' + url + ' status=' + request.status);
-            return;
-        }
         context.decodeAudioData(request.response, function(data) {
             airhorns.push(data);
             var url_segments = request.responseURL.split('/');
@@ -1260,6 +1238,7 @@ function refresh_airhorns() {
             loadAirHorn('/static/audio/morefire.mp3');
             loadAirHorn('/static/audio/Freddie.mp3');
             loadAirHorn('/static/audio/partypeople.wav');
+            loadAirHorn('/static/audio/wow.wav');
             loadAirHorn('/static/audio/GoodNewsEveryone.mp3');
             loadAirHorn('/static/audio/eh-eh-oh-eh-oh.mp3');
 	    loadAirHorn('/static/audio/vamos-a-bailar.mp3');
@@ -1335,3 +1314,4 @@ window.addEventListener('load', function(){
     socket.emit('fetch_search_token');
     initialize_tabs();
 });
+

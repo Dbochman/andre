@@ -36,7 +36,7 @@ class PlayHistory(object):
 
         if self._db._r.zscore('playhistory', json_play):
             return # play already in redis
-        self._db._r.zadd('playhistory', {json_play: endtime})
+        self._db._r.zadd('playhistory', endtime, json_play)
         if not initial_init:
             logger.debug("added play; store is now %d plays" % self.num_plays())
 
@@ -73,8 +73,7 @@ class PlayHistory(object):
         play_log_files = glob(CONF.LOG_DIR + '/play_log_*.json')
         start = datetime.now()
         logger.info("History init starting at %s" % start)
-        for path in play_log_files:
-            self._store_play_log_file(path)
+        map(self._store_play_log_file, play_log_files)
         logger.info("History init took %s" % (datetime.now() - start))
 
     def _store_play_log_file(self, play_log_filename):

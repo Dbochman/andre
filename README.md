@@ -1,37 +1,3 @@
-Andre / Prosecco (Resurrection Notes)
-=
-
-This repo is an older internal “office radio” app. Below are modern setup notes
-for bringing it back locally or in a container.
-
-Quickstart (Docker Compose)
-1. Copy config template:
-   - `cp config.example.yaml local_config.yaml`
-2. Fill in required secrets in `local_config.yaml`:
-   - Google OAuth client ID/secret
-   - Spotify client ID/secret
-   - YouTube/SoundCloud keys (if needed)
-3. Run:
-   - `docker-compose up --build`
-4. Open:
-   - `http://localhost:5000/`
-
-Dev-only auth bypass
-- Set `DEBUG=True` and `DEV_AUTH_EMAIL=dev@example.com` (via env or `local_config.yaml`).
-- The app will auto-login on localhost only when DEBUG is true.
-
-Google OAuth
-- Set redirect URL to:
-  - `http://localhost:5000/authentication/callback`
-
-Environment overrides (optional)
-- `REDIS_HOST`, `REDIS_PORT`, `DEV_AUTH_EMAIL`, `DEBUG`
-
-Tests
-- `SKIP_SPOTIFY_PREFETCH=1 pytest`
-
----
-
 Welcome t o Andre!
 =
 

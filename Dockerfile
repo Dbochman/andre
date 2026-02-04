@@ -1,35 +1,51 @@
 # Hello friend!
 #
-# Build and run:
-#  $ docker build -t andre .
-#  $ docker run -p 5000:5000 --env-file .env andre
-#
-# This container expects Redis to be reachable at REDIS_HOST/REDIS_PORT.
-FROM python:3.10-slim
+# To build yourself a docker image, you'll want to go into config.yaml first
+# and set debug=True. Then (with docker running) run:
+#  $ docker build .
+# and you'll get a docker image you can start up with:
+#  $ docker run -p 5000:5000 -it <RANDOMISH-IMG-ID>
+# this will start the container and expose prosecco on your local port 5000
+FROM gcr.io/spotify-base-images/trusty-java:0.26
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+# apt-get install supervisor (to start all the procs), redis, and 
+# the more time-consuming python packages
+RUN apt-get update && apt-get install -y \
+    python \
+    python-audioread \
+    python-dev \
+    python-mock \
+    python-msgpack \
+    python-nose \
+    python-numpy \
+    python-pip \
+    python-scipy \
+    python-setuptools \
+    python-sklearn \
+    python-support \
+    python-unittest2 \
+    supervisor\
+    redis-server\
+    build-essential\
+    python-gevent\
+    python-markupsafe\
+    python-pycryptopp 
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    libffi-dev \
-    libssl-dev \
-    libjpeg-dev \
-    zlib1g-dev \
-    libevent-dev \
-    supervisor \
-    && rm -rf /var/lib/apt/lists/*
+# The image runs really old versions of pip and setuptools so we upgrade them
+RUN pip install --upgrade pip setuptools
 
-WORKDIR /prosecco
-COPY . /prosecco
+# Add the whole repo to the container and get the rest of the python packages installed
+ADD . /prosecco
+# Use the internal pip repo
+RUN pip install --no-cache-dir -r /prosecco/requirements.txt
 
-RUN pip install --no-cache-dir pip==23.3.2 setuptools==57.5.0 \
-    && pip install --no-cache-dir -r /prosecco/requirements.txt
-
+ADD supervise/redis.conf /etc/supervisor/conf.d/redis.conf
 ADD supervise/player.conf /etc/supervisor/conf.d/player.conf
 ADD supervise/main.conf /etc/supervisor/conf.d/main.conf
 
+# This is the port(s) we want to expose
 EXPOSE 5000
 
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
+# Kick off supervisor in interactive mode so the container keeps running
+# forever
+cmd /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf

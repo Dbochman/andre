@@ -15,7 +15,6 @@ import traceback
 import requests
 import redis
 import re
-import base64
 
 import spotipy.oauth2, spotipy.client
 
@@ -38,29 +37,7 @@ server_tokens = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, 
 spotify_client = spotipy.client.Spotify(client_credentials_manager=server_tokens)
 
 auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
-if not os.environ.get("SKIP_SPOTIFY_PREFETCH"):
-    auth.get_access_token()
-
-
-def _pickle_dump(value):
-    return base64.b64encode(pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)).decode("ascii")
-
-
-def _pickle_load(value):
-    if value is None:
-        return None
-    if isinstance(value, bytes):
-        raw = value
-    else:
-        raw = value.encode("utf-8", "surrogateescape")
-    try:
-        decoded = base64.b64decode(raw, validate=True)
-        return pickle.loads(decoded)
-    except Exception:
-        try:
-            return pickle.loads(raw)
-        except Exception:
-            return None
+auth.get_access_token()
 
 
 def _now():
@@ -86,7 +63,7 @@ def _clean_song(song):
 ytre = re.compile("PT((\\d+)H)?((\\d+)M)?(\\d+)S")
 def parse_yt_duration(d):
     m = ytre.match(d)
-    logger.debug("parse_yt_duration raw %s", d)
+    print d
     if m:
         duration = int(m.group(5))
 
@@ -106,14 +83,7 @@ def parse_yt_duration(d):
 class DB(object):
     def __init__(self, init_history_to_redis=True):
         logger.info('Creating DB object')
-        redis_host = CONF.REDIS_HOST or 'localhost'
-        redis_port = int(CONF.REDIS_PORT) if CONF.REDIS_PORT else 6379
-        self._r = redis.Redis(
-            host=redis_host,
-            port=redis_port,
-            decode_responses=True,
-            encoding_errors='surrogateescape',
-        )
+        self._r = redis.StrictRedis()
         self._h = PlayHistory(self)
         if init_history_to_redis:
             self._h.init_history()
@@ -152,12 +122,7 @@ class DB(object):
             logger.warn(traceback.format_exc())
             rv = {}
         if not rv.get('tracks'):
-            try:
-                song_deets = spotify_client.track(seed_song)
-            except Exception:
-                logger.warn("Error getting track details for: " + str(seed_song))
-                logger.warn(traceback.format_exc())
-                return []
+            song_deets = spotify_client.track(seed_song)
             # try every artist
             for artist in song_deets['artists']:
                 logger.debug(artist['id'])
@@ -225,9 +190,7 @@ class DB(object):
     def bender_streak(self):
         now = self.player_now()
         try:
-            then = _pickle_load(self._r.get('MISC|bender_streak_start'))
-            if not then:
-                raise ValueError('missing bender streak')
+            then = pickle.loads(self._r.get('MISC|bender_streak_start'))
             logger.debug("bender streak is %s seconds, now %s then %s" % ((now - then).total_seconds(), now, then))
         except Exception as _e:
             logger.debug("Exception getting MISC|bender_streak_start: %s; assuming no streak" % _e)
@@ -237,7 +200,7 @@ class DB(object):
 
 
     def master_player(self):
-        id = str(uuid.uuid4())
+        id = uuid.uuid4()
         n = self._r.setnx('MISC|master-player', id)
         while not n:
             time.sleep(5)
@@ -249,9 +212,8 @@ class DB(object):
 
             song = self.get_now_playing()
             finish_on = self._r.get('MISC|current-done')
-            finish_on_parsed = _pickle_load(finish_on)
-            if finish_on and finish_on_parsed and finish_on_parsed > self.player_now():
-                done = finish_on_parsed
+            if finish_on and pickle.loads(finish_on) > self.player_now():
+                done = pickle.loads(finish_on)
             else:
                 if song:
                     self.log_finished_song(song)
@@ -259,7 +221,7 @@ class DB(object):
 
                 song = self.pop_next()
                 if not song:
-                    logger.debug("streak start set %s"%self._r.setnx('MISC|bender_streak_start', _pickle_dump(self.player_now())))
+                    logger.debug("streak start set %s"%self._r.setnx('MISC|bender_streak_start', pickle.dumps(self.player_now())))
                     if (not CONF.USE_BENDER) or (self.bender_streak() <= CONF.MAX_BENDER_MINUTES * 60):
                         got_song = False
                         while not got_song:
@@ -286,7 +248,7 @@ class DB(object):
 
             self._r.setex('MISC|current-done',
                           expire_on,
-                          _pickle_dump(done))
+                          pickle.dumps(done))
             self._r.set('MISC|started-on',
                           self.player_now().isoformat())
             while self.player_now() < done:
@@ -311,10 +273,8 @@ class DB(object):
         t = self._r.get('MISC|player-now')
         if t:
             try:
-#                logger.debug("player-now %s" % _pickle_load(t))
-                parsed = _pickle_load(t)
-                if parsed:
-                    return parsed
+#                logger.debug("player-now %s" % pickle.loads(t))
+                return pickle.loads(t)
             except Exception:
                 logger.error("exception loading current player time: %s", traceback.format_exc())
                 logger.debug("at time (not from redis): %s " % _now())
@@ -326,7 +286,7 @@ class DB(object):
     def _add_now(self, seconds):
         new_t = self.player_now() + datetime.timedelta(seconds=seconds)
 #        logger.debug("updating time %s", new_t)
-        self._r.setex('MISC|player-now', 12*3600, _pickle_dump(new_t))
+        self._r.setex('MISC|player-now', 12*3600, pickle.dumps(new_t))
 
     def _song_keywords(self, title):
         return set(x for x in title.lower().split()
@@ -346,7 +306,7 @@ class DB(object):
         this_user_songs_in_queue = 1
         for i in range(0, len(queued) - 1):
             x = queued[i]
-            logger.debug("queue item %s", json.dumps(x))
+            print str(json.dumps(x))
             if x.get('user','') == userid:
                 this_user_songs_in_queue += 1
 
@@ -409,12 +369,12 @@ class DB(object):
         self._r.sadd(s_id, userid)
         self._r.expire(s_id, 24*60*60)
         score = self._score_track(userid, force_first, song) + penalty
-        self._r.zadd('MISC|priority-queue', {str(id): score})
+        self._r.zadd('MISC|priority-queue', score, str(id))
         self._msg('playlist_update')
         return str(id)
 
     def _pluck_youtube_img(self, doc, height):
-        for img in doc['snippet']['thumbnails'].values():
+        for img in doc['snippet']['thumbnails'].itervalues():
             if img['height'] >= height:
                 return img['url']
         return ""
@@ -444,7 +404,7 @@ class DB(object):
     def add_youtube_song(self, userid, trackid, penalty=0):
         response = requests.get('https://www.googleapis.com/youtube/v3/videos/',
                                 params=dict(id=trackid, part='snippet,contentDetails', key=CONF.YT_API_KEY), verify=False).json()
-        logger.debug("spotify response %s", json.dumps(response))
+        print json.dumps(response)
         response = response['items'][0]
         if 'coldplay' in response['snippet']['title'].lower():
             logger.info('{0} tried to add "{1}" by Coldplay (YT)'.format(
@@ -503,7 +463,7 @@ class DB(object):
                     auto=not scrobble,
                     img=img)
 
-        logger.debug("get_spotify_song %s", response['artists'])
+        print "get_spotify_song", response['artists']
         # TODO requests.get('')
 
         # print spotify_client.me()
@@ -538,7 +498,7 @@ class DB(object):
         return jams
 
     def add_jam(self, queued_song_jams_key, userid):
-        self._r.zadd(queued_song_jams_key, {userid.lower(): int(time.time())})
+        self._r.zadd(queued_song_jams_key, int(time.time()), userid.lower())
         logger.info("jammed by " +  userid)
 
     def remove_jam(self, queued_song_jams_key, userid):
@@ -576,8 +536,8 @@ class DB(object):
 
     def add_comment(self, id, userid, text):
         comments_key = 'COMMENTS|{0}'.format(id)
-        self._r.zadd(comments_key, {"{0}||{1}".format(userid.lower(), text): int(time.time())})
-        self._r.expire(comments_key, 24*60*60)
+        self._r.zadd(comments_key, int(time.time()), "{0}||{1}".format(userid.lower(), text))
+	self._r.expire(comments_key, 24*60*60)
         logger.info('comment by {0} at {1}: "{2}"'.format(userid, time.ctime(), text))
         self._msg('playlist_update')
 
@@ -637,20 +597,19 @@ class DB(object):
     def get_additional_src(self):
         raw = self._r.hgetall('MISC|backup-queue-data')
         if not raw:
-            # Avoid infinite loops if fill songs can't be fetched (e.g., invalid Spotify creds).
-            for _ in range(5):
-                self.ensure_fill_songs()  # so we have something to preview
+            while True:
+                self.ensure_fill_songs() #so we have something to preview
                 fillSong = self._r.lindex('MISC|fill-songs', 0)
                 if not fillSong:
                     break
-                # show bender preview!
+                #show bender preview!
                 try:
                     fillInfo = self.get_fill_info(fillSong)
                     title = fillInfo['title']
                     fillInfo['title'] = fillInfo['artist'] + " : " + title
-                    fillInfo['name'] = 'Benderbot'
-                    fillInfo['user'] = 'the@echonest.com'
-                    fillInfo['playlist_src'] = True
+                    fillInfo['name']='Benderbot'
+                    fillInfo['user']='the@echonest.com'
+                    fillInfo['playlist_src']=True
                     fillInfo["dm_buttons"] = False
                     fillInfo["jam"] = []
                     return fillInfo
@@ -658,9 +617,6 @@ class DB(object):
                     logger.error('song not available in this region: %s', fillSong)
                     logger.error('backtrace just to be sure: %s', traceback.format_exc())
                     self._r.lpop('MISC|fill-songs')
-
-            # Fallback when fill songs are unavailable; prevents /queue timeout.
-            return {'playlist_src': True}
 
         raw['playlist_src'] = True
         return raw
@@ -714,9 +670,7 @@ class DB(object):
         if use_estimate:
             end_time = self._r.get('MISC|current-done')
             if end_time:
-                parsed = _pickle_load(end_time)
-                if parsed:
-                    end_time = parsed.isoformat()
+                end_time = pickle.loads(end_time).isoformat()
 
         if not end_time:
             end_time = self.player_now().isoformat()
@@ -732,10 +686,8 @@ class DB(object):
             rv['endtime'] = self.song_end_time(use_estimate=True)
             rv['pos'] = 0
             if p_endtime:
-                parsed = _pickle_load(p_endtime)
-                if parsed:
-                    remaining = (parsed - self.player_now()).total_seconds()
-                    rv['pos'] = int(max(0, rv['duration'] - remaining))
+                remaining = (pickle.loads(p_endtime) - self.player_now()).total_seconds()
+                rv['pos'] = int(max(0,rv['duration'] - remaining))
 
         paused = self._r.get('MISC|paused')
         rv['paused'] = False
@@ -874,18 +826,12 @@ class DB(object):
         return rv
 
     def _do_horn(self, userid, free, name):
-        playing = self.get_now_playing() or {}
-        if not playing:
-            logger.info('airhorn triggered without now playing')
-        horn = dict(
-            img=playing.get('img', ''),
-            songid=playing.get('id', ''),
-            when=_now().isoformat(),
-            free=free,
-            user=userid,
-            artist=playing.get('artist', ''),
-            title=playing.get('title', ''),
-        )
+        playing = self.get_now_playing()
+        horn = dict(img=playing['img'],
+                    songid=playing['id'],
+                    when=_now().isoformat(),
+                    free=free, user=userid, artist=playing['artist'],
+                    title=playing['title'])
         self._r.rpush('AIRHORNS', json.dumps(horn))
         self._msg('do_airhorn|0.4|%s' % name)  # volume of airhorn - may need to be tweaked, random choice for airhorn
 
@@ -917,7 +863,7 @@ class DB(object):
         new_vol = max(0, int(new_vol))
 #        print new_vol
         new_vol = min(100, new_vol)
-        logger.debug("set_volume %s", new_vol)
+        print "set_volume", new_vol
         self._r.set('MISC|volume', new_vol)
         self._msg('v|'+str(new_vol))
         logger.info('set_volume in pct %s', new_vol)
@@ -929,8 +875,7 @@ class DB(object):
     def try_login(self, email, passwd):
         email = email.lower()
         d = self._r.hget('MISC|guest-login-expire', email)
-        loaded = _pickle_load(d)
-        if not d or not loaded or loaded < _now():
+        if not d or pickle.loads(d) < _now():
             self._r.hdel('MISC|guest-login', email)
             return False
         full_pass = self._r.hget('MISC|guest-login', email)
@@ -939,7 +884,7 @@ class DB(object):
         return None
 
     def send_email(self, target, subject, body):
-        if isinstance(target, str):
+        if isinstance(target, basestring):
             target = [target]
         msg = "To: {0}\nFrom: {1}\nSubject: {2}\n\n{3}"
         msg = msg.format(', '.join(target), CONF.SMTP_FROM,
@@ -956,7 +901,7 @@ class DB(object):
                     if 4 < len(x) < 8]
         random.shuffle(words)
         passwd = ''.join(x.title() for x in words[:2])
-        self._r.hset('MISC|guest-login-expire', email, _pickle_dump(expires))
+        self._r.hset('MISC|guest-login-expire', email, pickle.dumps(expires))
         self._r.hset('MISC|guest-login', email, passwd)
         self.send_email(email, "Welcome to Andre!",
                         render_template('welcome_email.txt',

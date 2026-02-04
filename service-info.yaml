@@ -1,0 +1,14 @@
+id: prosecco
+description: Office radio for Boston
+system: prosecco
+owner: proseccohack
+visibility: private
+dependencies: []
+
+facts:
+  docs:
+  service_discovery:
+  role: proseccoboston  # IMPORTANT! Needed for provisioning!
+  lifecycle: experimental
+  helios_agent: true
+  slack_channel: proseccohack  # Link to Slack channel.
