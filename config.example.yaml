@@ -1,0 +1,77 @@
+# Andre Configuration Example
+# Copy this to local_config.yaml and fill in your values
+
+# Spotify OAuth - Required
+SPOTIFY_CLIENT_ID: "your-spotify-client-id"
+SPOTIFY_CLIENT_SECRET: "your-spotify-client-secret"
+SPOTIFY_USERNAME: your_spotify_username
+
+# Google OAuth - Required for authentication
+GOOGLE_CLIENT_ID: "your-google-client-id.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET: "your-google-client-secret"
+
+# Allowed email domains for Google OAuth (list format)
+ALLOWED_EMAIL_DOMAINS:
+  - gmail.com
+
+# YouTube API Key (optional, for YouTube support)
+YT_API_KEY: "your-youtube-api-key"
+
+# SoundCloud Client ID (optional, for SoundCloud support)
+SOUNDCLOUD_CLIENT_ID: "your-soundcloud-client-id"
+
+# Debug mode
+DEBUG: true
+
+# Dev-only auth bypass email (only works when DEBUG=true and on localhost)
+DEV_AUTH_EMAIL: "dev@example.com"
+
+# Flask secret key - generate with: python -c "import secrets; print(secrets.token_hex(50))"
+SECRET_KEY: "change-this-to-a-random-secret-key"
+
+# Redis connection (for Docker, use service name 'redis')
+REDIS_HOST: "localhost"
+REDIS_PORT: 6379
+
+# Hostname for production
+HOSTNAME: "localhost:5000"
+
+# Logging
+LOG_FORMAT: "%(asctime)-15s %(name)-10s [%(levelname)s] %(message)s"
+LOG_DIR: "./play_logs"
+OAUTH_CACHE_PATH: "./oauth_creds"
+
+# Bender (auto-fill) settings
+USE_BENDER: true
+MAX_BENDER_MINUTES: 120
+BENDER_FILTER_TIME: 604800  # 1 week in seconds
+BENDER_REGIONS:
+  - US
+
+# Airhorn settings
+AIRHORN_MAX: 99
+AIRHORN_EXPIRE_SEC: 20
+AIRHORN_EXPIRE_COUNT: 2
+AIRHORN_LIST_MIN_LEN: 5
+FREE_AIRHORN: 99
+
+# Asset bundles
+BUNDLES:
+  js:
+    prefix: 'js/'
+    files:
+      - jquery-1.10.2.js
+      - underscore.js
+      - bootstrap.js
+      - backbone.js
+      - app.js
+      - sc.js
+  css:
+    prefix: 'css/'
+    files:
+      - bootstrap.min.css
+      - font-awesome.min.css
+      - style.css
+
+# Cache buster for static assets
+CACHE_BUSTER: "2024-01-01"

@@ -86,7 +86,9 @@ def parse_yt_duration(d):
 class DB(object):
     def __init__(self, init_history_to_redis=True):
         logger.info('Creating DB object')
-        self._r = redis.StrictRedis()
+        redis_host = CONF.REDIS_HOST or 'localhost'
+        redis_port = CONF.REDIS_PORT or 6379
+        self._r = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=False)
         self._h = PlayHistory(self)
         if init_history_to_redis:
             self._h.init_history()

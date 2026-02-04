@@ -25,6 +25,14 @@ def get_config_filenames():
         logger.debug('default config file names, "{0}"'.format(fnames))
     return [os.path.abspath(f) for f in fnames]
 
+# Environment variable overrides (these take precedence over yaml files)
+ENV_OVERRIDES = [
+    'REDIS_HOST', 'REDIS_PORT', 'DEBUG', 'SECRET_KEY', 'HOSTNAME',
+    'SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET',
+    'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
+    'DEV_AUTH_EMAIL', 'YT_API_KEY', 'SOUNDCLOUD_CLIENT_ID'
+]
+
 def __read_conf(*files):
     for f in files:
         print(f)
@@ -40,6 +48,25 @@ def __read_conf(*files):
         except Exception as e:
             print("failed", e)
             logger.debug('Failed to load file "{0}" ({1})'.format(f, str(e)))
+
+    # Apply environment variable overrides
+    for key in ENV_OVERRIDES:
+        env_val = os.environ.get(key)
+        if env_val is not None:
+            # Convert string booleans
+            if env_val.lower() in ('true', '1', 'yes'):
+                env_val = True
+            elif env_val.lower() in ('false', '0', 'no'):
+                env_val = False
+            # Convert numeric strings for port
+            elif key.endswith('_PORT'):
+                try:
+                    env_val = int(env_val)
+                except ValueError:
+                    pass
+            setattr(CONF, key, env_val)
+            logger.debug('Override from env: {0}={1}'.format(key, env_val))
+
     print("CONF", CONF)
 
 __read_conf(*get_config_filenames())

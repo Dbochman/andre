@@ -141,7 +141,7 @@ class MusicNamespace(WebSocketManager):
         self.log('New namespace for {0}'.format(self.email))
 
     def listener(self):
-        r = redis.StrictRedis().pubsub()
+        r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379).pubsub()
         r.subscribe('MISC|update-pubsub')
         for m in r.listen():
             if m['type'] != 'message':
@@ -312,7 +312,7 @@ class VolumeNamespace(WebSocketManager):
         self.emit('volume', str(d.set_volume(vol)))
 
     def listener(self):
-        r = redis.StrictRedis().pubsub()
+        r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379).pubsub()
         r.subscribe('MISC|update-pubsub')
         for m in r.listen():
             if m['type'] != 'message':
@@ -329,17 +329,17 @@ class VolumeNamespace(WebSocketManager):
 def inject_config():
     return dict(CONF=CONF)
 
-SAFE_PATHS = (u'/login/', u'/logout/', u'/playing/', u'/queue/', u'/volume/',
-              u'/guest', u'/guest/', u'/api/jammit/',
-              u'/authentication/callback', u'/token', u'/last/', u'/airhorns/', u'/z/')
-SAFE_PARAM_PATHS = (u'/history', u'/user_history', u'/user_jam_history', u'/search/v2', u'/add_song',
-    u'/blast_airhorn', u'/airhorn_list', u'/queue/', u'/jam')
+SAFE_PATHS = ('/login/', '/logout/', '/playing/', '/queue/', '/volume/',
+              '/guest', '/guest/', '/api/jammit/', '/health',
+              '/authentication/callback', '/token', '/last/', '/airhorns/', '/z/')
+SAFE_PARAM_PATHS = ('/history', '/user_history', '/user_jam_history', '/search/v2', '/add_song',
+    '/blast_airhorn', '/airhorn_list', '/queue/', '/jam')
 VALID_HOSTS = ('localhost:5000', str(CONF.HOSTNAME) if CONF.HOSTNAME else '')
 
 
 @app.before_request
 def require_auth():
-    if request.host not in VALID_HOSTS:
+    if CONF.HOSTNAME and request.host not in VALID_HOSTS:
         return redirect('http://%s' % CONF.HOSTNAME)
     if request.path in SAFE_PATHS:
         return
@@ -349,12 +349,15 @@ def require_auth():
     if request.path.startswith('/static/'):
         return
     if 'email' not in session:
-        default_email = 'test@spotify.com';
-        default_names = ['testy', 'mctesterface'];
-
-        session['email'] = request.headers.get('sso-mail', request.args.get('useremail', default_email))
-        session['fullname'] = request.headers.get('sso-givenname', default_names[0]) + ' ' + request.headers.get('sso-surname', default_names[1])
-        return
+        # Dev-only bypass: only works in DEBUG mode on localhost
+        if CONF.DEBUG and CONF.DEV_AUTH_EMAIL:
+            host = request.host.split(':')[0]
+            if host in ('localhost', '127.0.0.1'):
+                session['email'] = CONF.DEV_AUTH_EMAIL
+                session['fullname'] = 'Dev User'
+                return
+        # Redirect to login for unauthenticated requests
+        return redirect('/login/')
 
 
 @app.after_request
@@ -374,6 +377,10 @@ if CONF.DEBUG:
 else:
     REDIRECT_URI = "http://%s/authentication/callback" % CONF.HOSTNAME
     SPOTIFY_REDIRECT_URI = "http://%s/authentication/spotify_callback" % CONF.HOSTNAME
+
+@app.route('/health')
+def health():
+    return jsonify(status='ok')
 
 @app.route('/bounce/', methods=['GET'])
 def bounce():
@@ -409,10 +416,28 @@ def auth_callback():
                   grant_type="authorization_code")
     r = requests.post("https://accounts.google.com/o/oauth2/token",
                       data=params).json()
+    if 'access_token' not in r:
+        logger.error('OAuth failed: %s', r)
+        return redirect('/login/')
     token = r['access_token']
     user = requests.get('https://www.googleapis.com/oauth2/v1/userinfo',
                         params=dict(access_token=token), verify=False).json()
-    if not user['email'].endswith('@spotify.com'):
+
+    # Check email domain against allowed list
+    email = user.get('email', '')
+    allowed_domains = CONF.ALLOWED_EMAIL_DOMAINS or []
+    # Ensure it's a list (handle case where config has a single string)
+    if isinstance(allowed_domains, str):
+        allowed_domains = [allowed_domains]
+
+    email_allowed = False
+    for domain in allowed_domains:
+        if email.endswith('@' + domain):
+            email_allowed = True
+            break
+
+    if not email_allowed:
+        logger.warning('Login rejected for email: %s (allowed domains: %s)', email, allowed_domains)
         return redirect('/login/')
 
     for k1, k2 in (('email', 'email',), ('fullname', 'name'),):
