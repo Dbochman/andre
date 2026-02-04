@@ -28,6 +28,12 @@ logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Add ProxyFix for reverse proxy support (HTTPS detection, real client IP)
+if not CONF.DEBUG:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 assets = Environment(app)
 app.config['GOOGLE_DOMAIN'] = 'spotify.com'
 app.url_map.strict_slashes = False
@@ -89,7 +95,7 @@ if CONF.DEBUG:
 app.secret_key = CONF.SECRET_KEY
 # Session cookie settings for browser compatibility
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_SECURE'] = not CONF.DEBUG  # Secure cookies over HTTPS in production
 
 class ProseccoAPIError(Exception):
     status_code = 400
@@ -442,8 +448,9 @@ if CONF.DEBUG:
     REDIRECT_URI = "http://{}/authentication/callback".format(host)
     SPOTIFY_REDIRECT_URI = "http://{}/authentication/spotify_callback".format(host)
 else:
-    REDIRECT_URI = "http://%s/authentication/callback" % CONF.HOSTNAME
-    SPOTIFY_REDIRECT_URI = "http://%s/authentication/spotify_callback" % CONF.HOSTNAME
+    # Production uses HTTPS behind reverse proxy
+    REDIRECT_URI = "https://%s/authentication/callback" % CONF.HOSTNAME
+    SPOTIFY_REDIRECT_URI = "https://%s/authentication/spotify_callback" % CONF.HOSTNAME
 
 @app.route('/health')
 def health():
@@ -488,7 +495,7 @@ def auth_callback():
         return redirect('/login/')
     token = r['access_token']
     user = requests.get('https://www.googleapis.com/oauth2/v1/userinfo',
-                        params=dict(access_token=token), verify=False).json()
+                        params=dict(access_token=token)).json()
 
     # Check email domain against allowed list
     email = user.get('email', '')
