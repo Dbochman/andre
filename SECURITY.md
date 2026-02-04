@@ -246,6 +246,18 @@ sudo fail2ban-client set sshd unbanip <IP_ADDRESS>
 
 ---
 
+## Rollback
+
+If Docker security changes cause issues:
+
+```bash
+git checkout HEAD~1 -- docker-compose.yaml Dockerfile
+docker compose down
+docker compose up -d --build
+```
+
+---
+
 ## Files Modified
 
 | File | Changes |
