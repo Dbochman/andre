@@ -529,7 +529,7 @@ class DB(object):
 
     def add_youtube_song(self, userid, trackid, penalty=0):
         response = requests.get('https://www.googleapis.com/youtube/v3/videos/',
-                                params=dict(id=trackid, part='snippet,contentDetails', key=CONF.YT_API_KEY), verify=False).json()
+                                params=dict(id=trackid, part='snippet,contentDetails', key=CONF.YT_API_KEY)).json()
         print(json.dumps(response))
         response = response['items'][0]
         if 'coldplay' in response['snippet']['title'].lower():

@@ -2,6 +2,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: andre_redis
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
@@ -11,23 +12,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
-
-  db:
-    image: postgres:15-alpine
-    container_name: andre_postgres
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: andre_database
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   andre:
     build: .
@@ -35,36 +25,65 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      db:
-        condition: service_healthy
     ports:
       - "5001:5000"
+    env_file:
+      - .env
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - DEBUG=false
-      # - DEV_AUTH_EMAIL=dev@gmail.com
-    hostname: localhost
     volumes:
       - ./local_config.yaml:/app/local_config.yaml:ro
       - ./play_logs:/app/play_logs
       - ./oauth_creds:/app/oauth_creds
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   player:
     build: .
     container_name: andre_player
     depends_on:
       - andre
+    env_file:
+      - .env
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - DEBUG=false
     volumes:
       - ./local_config.yaml:/app/local_config.yaml:ro
       - ./play_logs:/app/play_logs
       - ./oauth_creds:/app/oauth_creds
     command: ["python", "master_player.py"]
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # PostgreSQL is optional - uncomment if you need it for user data
+  # db:
+  #   image: postgres:15-alpine
+  #   container_name: andre_postgres
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     POSTGRES_DB: andre_database
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 5s
+  #     timeout: 3s
+  #     retries: 3
+  #   restart: unless-stopped
 
 volumes:
   redis_data:
-  postgres_data:
+  # postgres_data:
