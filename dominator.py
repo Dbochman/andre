@@ -8,7 +8,7 @@ def main():
     for cat in cats:
         contents = en.get('catalog/read', results=1000, id = cat['id'])
         count = sum(x['play_count'] for x in  contents['catalog']['items'] if 'play_count' in x)
-        print cat['name'], cat['total'], count
+        print(cat['name'], cat['total'], count)
 
 if __name__ == '__main__':
     main()

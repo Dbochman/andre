@@ -480,7 +480,7 @@ class DB(object):
         song = dict(data=response, src='soundcloud', trackid=trackid,
                     title=track['title'],
                     artist=artist,
-                    duration=int(track['duration'])/1000,
+                    duration=int(track['duration']) // 1000,
                     big_img=track['artwork_url'], auto=False,
                     img=track['artwork_url'])
         self._add_song(userid, song, False, penalty=penalty)
@@ -555,7 +555,7 @@ class DB(object):
         song = dict(data=response, src='spotify', trackid=trackid,
                     title=response['name'],
                     artist=", ".join([a['name'] for a in response['artists']]),
-                    duration=int(response['duration_ms'])/1000,
+                    duration=int(response['duration_ms']) // 1000,
                     big_img=big_img,
                     auto=not scrobble,
                     img=img)
