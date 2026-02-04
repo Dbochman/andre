@@ -695,6 +695,16 @@ class DB(object):
 
 
     def benderqueue(self, trackId, userid):
+        # Check throwback queue first
+        throwbackFrontId = self._r.lindex('MISC|throwback-songs', 0)
+        if trackId == throwbackFrontId:
+            self._r.lpop('MISC|throwback-songs')
+            original_user = self._r.hget('MISC|throwback-users', trackId) or 'the@echonest.com'
+            self._r.hdel('MISC|throwback-users', trackId)
+            newId = self.add_spotify_song(userid, throwbackFrontId)
+            self.jam(newId, original_user)
+            return
+
         frontId = self._r.lindex('MISC|fill-songs', 0)
         if trackId == frontId:
             self._r.lpop('MISC|fill-songs')
@@ -702,8 +712,19 @@ class DB(object):
             self.jam(newId, 'the@echonest.com')
 
     def benderfilter(self, trackId, userid):
+        # Check throwback queue first
+        throwbackFrontId = self._r.lindex('MISC|throwback-songs', 0)
+        logger.debug("benderfilter called: trackId=%s, throwbackFrontId=%s", trackId, throwbackFrontId)
+        if trackId == throwbackFrontId:
+            self._r.lpop('MISC|throwback-songs')
+            self._r.hdel('MISC|throwback-users', trackId)
+            self._r.setex('FILTER|%s' % trackId, CONF.BENDER_FILTER_TIME, 1)
+            self._msg('playlist_update')
+            logger.info("benderfilter (throwback) " + str(trackId) + " by " + userid)
+            return
+
         frontId = self._r.lindex('MISC|fill-songs', 0)
-        logger.debug("benderfilter called: trackId=%s, frontId=%s", trackId, frontId)
+        logger.debug("benderfilter checking fill-songs: frontId=%s", frontId)
         if trackId == frontId:
             #take this off bender's preview and add it to the filter
             self._r.lpop('MISC|fill-songs')
@@ -711,7 +732,7 @@ class DB(object):
             self._msg('playlist_update')
             logger.info("benderfilter " + str(frontId) + " by " + userid)
         else:
-            logger.warning("benderfilter mismatch: trackId=%s != frontId=%s", trackId, frontId)
+            logger.warning("benderfilter mismatch: trackId=%s != frontId=%s (throwback=%s)", trackId, frontId, throwbackFrontId)
 
 
     def get_song_from_queue(self, id):
