@@ -10,6 +10,7 @@ var COLOR_THEMES = [
     { name: 'Red', accent: '#ff4d4d', accentRgb: '255, 77, 77', hover: '#ff8080', hoverRgb: '255, 128, 128' },
     { name: 'Gold', accent: '#ffd700', accentRgb: '255, 215, 0', hover: '#ffe44d', hoverRgb: '255, 228, 77' },
     { name: 'Cyan', accent: '#00ffff', accentRgb: '0, 255, 255', hover: '#66ffff', hoverRgb: '102, 255, 255' },
+    { name: 'White', accent: '#ffffff', accentRgb: '255, 255, 255', hover: '#e0e0e0', hoverRgb: '224, 224, 224' },
 ];
 var currentColorIndex = 0;
 
