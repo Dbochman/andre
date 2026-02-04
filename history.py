@@ -130,3 +130,80 @@ class PlayHistory(object):
             if userid in self._jams(play):
                 user_jams.append(play)
         return user_jams
+
+    def get_throwback_plays(self, day_of_week=None, limit=50):
+        """
+        Get plays from the same day of the week from historical logs.
+
+        Args:
+            day_of_week: 0=Monday, 6=Sunday. If None, uses today.
+            limit: Max number of tracks to return.
+
+        Returns:
+            List of track URIs from historical plays on matching days.
+        """
+        import os
+        import random
+
+        if day_of_week is None:
+            day_of_week = datetime.now().weekday()
+
+        # Find all log files for the matching day of week
+        matching_files = []
+        play_log_files = glob(CONF.LOG_DIR + '/play_log_*.json')
+
+        for log_file in play_log_files:
+            # Extract date from filename: play_log_YYYY_MM_DD.json
+            basename = os.path.basename(log_file)
+            try:
+                parts = basename.replace('play_log_', '').replace('.json', '').split('_')
+                if len(parts) == 3:
+                    year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                    file_date = datetime(year, month, day)
+                    if file_date.weekday() == day_of_week:
+                        matching_files.append(log_file)
+            except (ValueError, IndexError):
+                continue
+
+        if not matching_files:
+            logger.info("No throwback files found for day of week %d", day_of_week)
+            return []
+
+        logger.info("Found %d throwback files for day of week %d", len(matching_files), day_of_week)
+
+        # Collect all plays from matching files
+        all_plays = []
+        for log_file in matching_files:
+            try:
+                with open(log_file, 'r') as f:
+                    for line in f:
+                        try:
+                            play = json.loads(line.strip())
+                            # Only include Spotify tracks with valid URIs
+                            if play.get('src') == 'spotify' and play.get('trackid', '').startswith('spotify:track:'):
+                                # Skip Benderbot plays for more variety
+                                if play.get('user') != 'the@echonest.com':
+                                    all_plays.append(play)
+                        except JSONDecodeError:
+                            continue
+            except IOError:
+                continue
+
+        if not all_plays:
+            logger.info("No valid throwback plays found")
+            return []
+
+        # Shuffle and deduplicate by track ID
+        random.shuffle(all_plays)
+        seen_tracks = set()
+        unique_tracks = []
+        for play in all_plays:
+            track_id = play.get('trackid')
+            if track_id and track_id not in seen_tracks:
+                seen_tracks.add(track_id)
+                unique_tracks.append(track_id)
+                if len(unique_tracks) >= limit:
+                    break
+
+        logger.info("Returning %d throwback tracks", len(unique_tracks))
+        return unique_tracks

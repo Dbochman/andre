@@ -219,6 +219,20 @@ class DB(object):
             except Exception:
                 logger.warning("Error searching for artist: %s", artist_name)
 
+        # Strategy 4: Throwback - pull from historical plays on same day of week
+        try:
+            throwback_tracks = self._h.get_throwback_plays(limit=20)
+            for track_uri in throwback_tracks:
+                if track_uri == seed_song_uri:
+                    continue
+                if self._r.get("FILTER|%s" % track_uri):
+                    continue
+                if track_uri not in out_tracks:
+                    out_tracks.append(track_uri)
+            logger.debug("Got %d throwback tracks from history", len(throwback_tracks))
+        except Exception:
+            logger.warning("Error getting throwback tracks: %s", traceback.format_exc())
+
         # Remove duplicates and shuffle for variety
         out_tracks = list(dict.fromkeys(out_tracks))  # Preserve order, remove dupes
         random.shuffle(out_tracks)
