@@ -107,13 +107,16 @@ docker compose up -d --build
 
 From your local machine:
 ```bash
-# Sync code to server
-rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' \
+# Sync code to server (excludes local config to preserve server settings)
+rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
+  --exclude='.env' --exclude='local_config.yaml' --exclude='.cache' \
   /Users/dylanbochman/repos/Andre/ deploy@192.241.153.83:/opt/andre/
 
 # SSH in and rebuild
 ssh deploy@192.241.153.83 "cd /opt/andre && docker compose up -d --build"
 ```
+
+**Important**: `local_config.yaml` is excluded to prevent overwriting the server's production config (which has `HOSTNAME: andre.dylanbochman.com`).
 
 ### Check Caddy Status
 
