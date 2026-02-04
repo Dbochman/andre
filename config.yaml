@@ -1,14 +1,17 @@
-SPOTIFY_CLIENT_ID: "233eb82d89634238a16e6d8b9df40bd9"
-SPOTIFY_CLIENT_SECRET: "a31d3f9643d34a47ba275900264a4eba"
-SPOTIFY_USERNAME: prosecho
-SPOTIFY_USERID: 27a212a5377047b08536f68196dbdd54
-GOOGLE_CLIENT_ID: 222781788701-9bc37s1s29fnr0lbf5i31d097321eam9.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET: tDHS_0RevoHdZ4ERpxJmaGXe
-YT_API_KEY: AIzaSyC_RuxXQ99bWcQb4W9o6VQ_inPZCuJikBY
+# Default configuration - copy to local_config.yaml and fill in real values
+# DO NOT put real credentials in this file
+
+SPOTIFY_CLIENT_ID: "your-spotify-client-id"
+SPOTIFY_CLIENT_SECRET: "your-spotify-client-secret"
+SPOTIFY_USERNAME: your-spotify-username
+SPOTIFY_USERID: ""
+GOOGLE_CLIENT_ID: "your-google-client-id.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET: "your-google-client-secret"
+YT_API_KEY: "your-youtube-api-key"
 DEBUG: False
-SECRET_KEY: "6b2528a9003d45a3ebad0f7c430f98686e9dbcf0f5ae651e52531abf2547e8aab4acddbe57929748a120af4a2c2ccf3544b1" #python -c "import os;print os.urandom(50).encode('hex')"
-PYTHON_RAVEN_DSN: "" #TODO
-JAVASCRIPT_RAVEN_DSN: "" #TODO
+SECRET_KEY: "generate-with-python-c-import-secrets-print-secrets-token-hex-50"
+PYTHON_RAVEN_DSN: ""
+JAVASCRIPT_RAVEN_DSN: ""
 LOG_FORMAT: "%(asctime)-15s %(name)-10s [%(levelname)s] %(message)s"
 BENDER_USE_DM: False
 DM_QUEUE_LOW: 999
@@ -35,10 +38,10 @@ BUNDLES:
 HEADERS_AUTH: yay
 CACHE_BUSTER: 2017-10-20
 SMTP_HOST: smtp.gmail.com
-SMTP_USER: itsandre@spotify.com
-SMTP_PASS: ifsewgkkuyomrcvg
-SMTP_FROM: itsandre@spotify.com
-SOUNDCLOUD_CLIENT_ID: 8267fd360bf3864e78a43456a6b26d74
+SMTP_USER: ""
+SMTP_PASS: ""
+SMTP_FROM: ""
+SOUNDCLOUD_CLIENT_ID: "your-soundcloud-client-id"
 AIRHORN_MAX: 99
 AIRHORN_EXPIRE_SEC: 20
 AIRHORN_EXPIRE_COUNT: 2
@@ -49,10 +52,10 @@ BENDER_CLUSTERS: True
 BENDER_JAMS: True
 BENDER_REGIONS:
     - US
-BENDER_DISCOVER_PLAYLIST: 3Qx1GjX3Mfz3WE8SBVXzfH
+BENDER_DISCOVER_PLAYLIST: ""
 TOP_TRACKS_REGION: US
 MAX_BENDER_MINUTES: 120
 LOG_DIR: './play_logs'
 OAUTH_CACHE_PATH: './oauth_creds'
-HOSTNAME: andre-backend.spotify.net
+HOSTNAME: localhost:5000
 BENDER_FILTER_TIME: 604800
