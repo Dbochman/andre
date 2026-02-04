@@ -146,7 +146,11 @@ The live instance runs on a $6/month DigitalOcean droplet with:
 
 ## History
 
-Andre was originally built at Spotify in 2017-2018 as an internal office music queue. It was resurrected and modernized to Python 3 in 2024-2026.
+Andre has its roots in **Prosecco**, an internal tool originally developed at [The Echo Nest](https://en.wikipedia.org/wiki/The_Echo_Nest) in Somerville, MA. The name "Prosecco" was chosen as a more appealing alternative to "dogfooding" - the practice of using your own product internally. In this case, it was used to test and refine The Echo Nest's music recommendation algorithms in a real-world office environment.
+
+After Spotify acquired The Echo Nest in 2014, Prosecco was forked and rebranded as **Andre** for use in Spotify's offices. The system continued to evolve, and was later forked again and rebranded as **Highlife** for other internal deployments.
+
+This repository represents the Andre branch, which was resurrected from a 2018 snapshot and modernized to Python 3 in 2024-2026. The historical play logs from 2017-2018 power the "Throwback" feature, which suggests songs that were played on the same day of the week years ago.
 
 ## License
 
