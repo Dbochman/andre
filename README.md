@@ -2,6 +2,8 @@
 
 A collaborative music queue system for offices and parties. Users can search for songs, add them to a shared queue, vote on songs, and enjoy features like airhorns and "bender mode" (auto-fill).
 
+**Live at: https://andre.dylanbochman.com**
+
 ## Features
 
 - Spotify integration for music search and playback
@@ -10,20 +12,44 @@ A collaborative music queue system for offices and parties. Users can search for
 - "Jam" button for showing appreciation
 - Airhorn sound effects
 - Bender mode: auto-fills queue with recommendations when empty
+- Throwback mode: pulls songs from the same day of week in history
 - Guest login system
 - Comments on songs
 
-## Setup
+## How It Works
+
+Andre is a **shared queue, individual playback** system:
+
+1. Everyone sees the same queue and can add songs, vote, and jam
+2. Each user connects their own Spotify Premium account
+3. Users play along on their own devices - Andre is the DJ, not the speaker
+
+## Quick Start (Docker)
+
+```bash
+# Clone the repo
+git clone https://github.com/Dbochman/andre.git
+cd andre
+
+# Copy and configure
+cp config.example.yaml local_config.yaml
+# Edit local_config.yaml with your Spotify and Google OAuth credentials
+
+# Start all services
+docker compose up --build
+
+# Visit http://localhost:5001
+```
+
+## Configuration
 
 ### Prerequisites
 
-- Python 3.10+
-- Redis
-- PostgreSQL (optional, for user data)
+- Docker and Docker Compose
 - Spotify Developer Account
 - Google Cloud Console project (for OAuth)
 
-### Configuration
+### Setup
 
 1. Copy the example config:
    ```bash
@@ -32,82 +58,96 @@ A collaborative music queue system for offices and parties. Users can search for
 
 2. Edit `local_config.yaml` with your credentials:
 
-   **Required - Spotify:**
-   - Create an app at https://developer.spotify.com/dashboard
-   - Set `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`
-   - Add `http://localhost:5000/authentication/spotify_callback` to redirect URIs
+   **Spotify** (https://developer.spotify.com/dashboard):
+   ```yaml
+   SPOTIFY_CLIENT_ID: "your-client-id"
+   SPOTIFY_CLIENT_SECRET: "your-client-secret"
+   SPOTIFY_USERNAME: your-username
+   ```
+   Add redirect URI: `http://localhost:5001/authentication/spotify_callback`
 
-   **Required - Google OAuth:**
-   - Create credentials at https://console.cloud.google.com/apis/credentials
-   - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
-   - Add `http://localhost:5000/authentication/callback` to authorized redirect URIs
+   **Google OAuth** (https://console.cloud.google.com/apis/credentials):
+   ```yaml
+   GOOGLE_CLIENT_ID: "your-client-id.apps.googleusercontent.com"
+   GOOGLE_CLIENT_SECRET: "your-client-secret"
+   ```
+   Add redirect URI: `http://localhost:5001/authentication/callback`
 
-   **Email Domain Restriction:**
+   **Access Control:**
    ```yaml
    ALLOWED_EMAIL_DOMAINS:
      - gmail.com
      - yourdomain.com
    ```
 
-   **Dev Mode (optional):**
-   ```yaml
-   DEBUG: true
-   DEV_AUTH_EMAIL: "yourname@gmail.com"
-   ```
-   When DEBUG is true and you're on localhost, the dev email bypasses OAuth.
-
-### Running with Docker
-
-```bash
-# Start all services
-docker-compose up --build
-
-# The app will be available at http://localhost:5000
-```
-
-### Running Locally
+## Running Locally (Without Docker)
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Start Redis (if not using Docker)
+# Start Redis
 redis-server
 
 # Run the app
 python run.py
 ```
 
-## Usage
-
-1. Visit http://localhost:5000
-2. Log in with Google (must use an allowed email domain)
-3. Search for songs in the Spotify tab
-4. Click a result to add it to the queue
-5. Vote on songs to change their position
-6. Click "Jam" to show you like a song
-
 ## API Endpoints
 
-- `GET /health` - Health check
-- `GET /playing/` - Current playing song
-- `GET /queue/` - Current queue
-- `POST /add_song` - Add a song (email, track_uri)
-- `POST /jam` - Jam a song (email, id)
-- `POST /blast_airhorn` - Trigger airhorn (email, name)
-- `GET /search/v2?q=` - Search Spotify
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/playing/` | GET | Current playing song |
+| `/queue/` | GET | Current queue |
+| `/add_song` | POST | Add a song |
+| `/jam` | POST | Jam a song |
+| `/blast_airhorn` | POST | Trigger airhorn |
+| `/search/v2?q=` | GET | Search Spotify |
 
-## Environment Variables
+## Deployment
 
-These override `local_config.yaml`:
+See [docs/CLOUD_HOSTING_PLAN.md](docs/CLOUD_HOSTING_PLAN.md) for production deployment instructions.
 
-- `REDIS_HOST` - Redis hostname (default: localhost)
-- `REDIS_PORT` - Redis port (default: 6379)
-- `DEBUG` - Enable debug mode (true/false)
-- `DEV_AUTH_EMAIL` - Email for dev bypass auth
-- `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+The live instance runs on a $6/month DigitalOcean droplet with:
+- Caddy reverse proxy (auto HTTPS)
+- Docker Compose (Flask app, Redis, background worker)
+- Let's Encrypt SSL certificate
+
+## Architecture
+
+```
+┌─────────────────────────────────────┐
+│           Web Browser               │
+│  (Backbone.js + WebSocket client)   │
+└───────────────┬─────────────────────┘
+                │
+┌───────────────▼─────────────────────┐
+│         Flask App (app.py)          │
+│  - OAuth (Google + Spotify)         │
+│  - REST API                         │
+│  - WebSocket (gevent)               │
+└───────────────┬─────────────────────┘
+                │
+┌───────────────▼─────────────────────┐
+│         Redis                       │
+│  - Queue data                       │
+│  - Votes & jams                     │
+│  - Session state                    │
+└───────────────┬─────────────────────┘
+                │
+┌───────────────▼─────────────────────┐
+│    Background Worker (master_player)│
+│  - Tracks playback timing           │
+│  - Bender recommendations           │
+│  - Broadcasts queue updates         │
+└─────────────────────────────────────┘
+```
+
+## History
+
+Andre was originally built at Spotify in 2017-2018 as an internal office music queue. It was resurrected and modernized to Python 3 in 2024-2026.
 
 ## License
 
-Internal use.
+MIT
