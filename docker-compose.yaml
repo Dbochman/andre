@@ -42,12 +42,28 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - DEBUG=true
+      - DEBUG=false
+      # - DEV_AUTH_EMAIL=dev@gmail.com
     hostname: localhost
     volumes:
       - ./local_config.yaml:/app/local_config.yaml:ro
       - ./play_logs:/app/play_logs
       - ./oauth_creds:/app/oauth_creds
+
+  player:
+    build: .
+    container_name: andre_player
+    depends_on:
+      - andre
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DEBUG=false
+    volumes:
+      - ./local_config.yaml:/app/local_config.yaml:ro
+      - ./play_logs:/app/play_logs
+      - ./oauth_creds:/app/oauth_creds
+    command: ["python", "master_player.py"]
 
 volumes:
   redis_data:
