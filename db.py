@@ -766,6 +766,29 @@ class DB(object):
                 except Exception as e:
                     logger.warning("Failed to ensure fill songs: %s", e)
                     break
+
+                # Check throwback queue first - show original user
+                throwbackSong = self._r.lindex('MISC|throwback-songs', 0)
+                if throwbackSong:
+                    try:
+                        original_user = self._r.hget('MISC|throwback-users', throwbackSong) or 'the@echonest.com'
+                        fillInfo = self.get_fill_info(throwbackSong)
+                        title = fillInfo['title']
+                        fillInfo['title'] = fillInfo['artist'] + " : " + title
+                        # Show original user's name instead of Benderbot
+                        fillInfo['name'] = original_user.split('@')[0] + " (throwback)"
+                        fillInfo['user'] = original_user
+                        fillInfo['playlist_src'] = True
+                        fillInfo["dm_buttons"] = False
+                        fillInfo["jam"] = []
+                        return fillInfo
+                    except Exception:
+                        logger.error('throwback song not available: %s', throwbackSong)
+                        logger.error('backtrace: %s', traceback.format_exc())
+                        self._r.lpop('MISC|throwback-songs')
+                        self._r.hdel('MISC|throwback-users', throwbackSong)
+                        continue
+
                 fillSong = self._r.lindex('MISC|fill-songs', 0)
                 if not fillSong:
                     break
