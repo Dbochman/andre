@@ -1446,7 +1446,6 @@ function refresh_airhorns() {
             loadAirHorn('/static/audio/morefire.mp3');
             loadAirHorn('/static/audio/Freddie.mp3');
             loadAirHorn('/static/audio/partypeople.wav');
-            loadAirHorn('/static/audio/wow.wav');
             loadAirHorn('/static/audio/GoodNewsEveryone.mp3');
             loadAirHorn('/static/audio/eh-eh-oh-eh-oh.mp3');
 	    loadAirHorn('/static/audio/vamos-a-bailar.mp3');

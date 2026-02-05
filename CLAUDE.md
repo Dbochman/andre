@@ -96,5 +96,4 @@ Newer spotipy versions return dict from `get_access_token()`. Code handles both 
 ## Known Limitations
 
 1. Spotify recommendations API deprecated - workaround uses top tracks + album tracks
-2. `wow.wav` audio file referenced but doesn't exist (non-blocking)
-3. HOSTNAME in config must exactly match Google OAuth redirect URI registration
+2. HOSTNAME in config must exactly match Google OAuth redirect URI registration

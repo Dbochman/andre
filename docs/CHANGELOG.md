@@ -29,6 +29,12 @@ All notable changes to Andre are documented in this file.
   - Changed `resume_spotify_if_needed()` to use `spotify_play()` with track URI instead of bare play endpoint
   - Commit: `f17cccf`
 
+- **Missing Audio File Fix** - Fixed 404 error and console warnings for missing `wow.wav` airhorn file
+  - Removed reference to non-existent audio file from `app.js`
+
+- **Form Accessibility Fix** - Added missing `id` and `name` attributes to search input fields
+  - Fixed 3 form fields in `main.html` that triggered browser accessibility warnings
+
 ### Security
 
 - **Redis Authentication** - Added password authentication and protected mode in response to DigitalOcean security notice
