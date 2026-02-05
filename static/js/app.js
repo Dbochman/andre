@@ -529,7 +529,7 @@ function onYouTubeIframeAPIReady(){
     ytready = true;
 
     if(!is_player) {
-        $('#make-player').text("play music here");
+        $('#make-player').text("sync spotify");
     }
 }
 
@@ -575,26 +575,19 @@ function fix_player(src, id, pos, paused){
         }
     }
 
-    // we don't play spotify tracks here, so we don't do anything for that src
-    // they play in a stitch app which is polling prosecco to see if it needs
-    // to play
-    // we do have to hide the YT player though. this is dumb because it's doing
-    // it on every fix_player call (since we don't keep track of the playing 
-    // state of spotify tracks) so we set a data attribute to see if we've 
-    // hidden it. hacky but whatever it's hack week.
+    // For Spotify: only sync once per track to avoid choppy audio
+    // Track the last synced track ID to prevent repeated sync calls
     if (src == 'spotify') {
-      $.ajax('https://api.spotify.com/v1/me/player/currently-playing', {
-          headers: {
-            Authorization: "Bearer " + auth_token
-          }
-      }).then(function(data) {
-        if (data === undefined || data['item']['uri'] != id) {
-          $('#ytapiplayer').data('youtube_hidden', 'true');
-          $('#ytapiplayer').css('z-index', '900');
-          spotify_play(id, pos);
-          spotify_volume(volume);
-        }
-      });
+      $('#ytapiplayer').data('youtube_hidden', 'true');
+      $('#ytapiplayer').css('z-index', '900');
+
+      // Only sync if this is a new track we haven't synced to yet
+      if (last_synced_spotify_track != id) {
+        last_synced_spotify_track = id;
+        console.log("Syncing to Spotify track:", id, "at position:", pos);
+        spotify_play(id, pos);
+        spotify_volume(volume);
+      }
     }
     if (src == 'soundcloud'){
       var playing = sc_player.playing_track_id;
@@ -625,22 +618,32 @@ function fix_player(src, id, pos, paused){
 
 
 function spotify_play(id, pos, retries=5) {
+    // Use position_ms in the play request to start at the correct position
+    // This works better than a separate seek call, especially for podcasts
+    var playData = {
+        "uris": [id]
+    };
+
+    // Only set position if we have a valid position > 0
+    if (pos && pos > 0) {
+        playData.position_ms = pos * 1000;
+    }
+
     $.ajax('https://api.spotify.com/v1/me/player/play', {
         method: 'PUT',
         headers: {
             Authorization: "Bearer " + auth_token
         },
-        data: JSON.stringify({
-            "uris":[id]
-
-        })
-    }).then(function() {
-        $.ajax('https://api.spotify.com/v1/me/player/seek?position_ms='+(pos*1000), {
-            method: 'PUT',
-            headers: {
-                Authorization: "Bearer " + auth_token
-            }
-        });
+        contentType: 'application/json',
+        data: JSON.stringify(playData)
+    }).fail(function(jqXHR, textStatus, errorThrown) {
+        console.error("spotify_play error:", textStatus, errorThrown);
+        // If play fails and we have retries, try again after a short delay
+        if (retries > 0) {
+            setTimeout(function() {
+                spotify_play(id, pos, retries - 1);
+            }, 1000);
+        }
     });
 }
 
@@ -713,7 +716,8 @@ socket.on('now_playing_update', function(data){
         now_playing.clear({silent:true});
         now_playing.set(data);
         if (!playerpaused) {
-            document.title = data.title + " - " + data.artist + " | Andre";
+            var display_artist = data.secondary_text || data.artist;
+            document.title = data.title + " - " + display_artist + " | Andre";
         }
     } else if (playerpaused) {
         // Paused with no title data - trigger render anyway
@@ -721,7 +725,7 @@ socket.on('now_playing_update', function(data){
     } else {
         // Unpause without title - restore from model if available
         var title = now_playing.get('title');
-        var artist = now_playing.get('artist');
+        var artist = now_playing.get('secondary_text') || now_playing.get('artist');
         if (title && artist) {
             document.title = title + " - " + artist + " | Andre";
         }
@@ -743,6 +747,10 @@ socket.on('now_playing_update', function(data){
     if(is_player){
         fix_player(now_playing.get('src'), now_playing.get('trackid'), data.pos, playerpaused);
     }
+
+    // Update skip button text based on content type
+    var isPodcast = data.type === 'episode';
+    $('#kill-playing').text(isPodcast ? 'skip playing podcast' : 'skip playing song');
 });
 
 var ALIGNMENT_OFF_COUNT = 0;
@@ -1079,9 +1087,52 @@ function uri_search_submit(ev){
             var target = $("#spotify-results");
             for (var i=0;i<data.length;++i){
                 target.append(TEMPLATES.search_result_spotify(data[i]));
-            };
+            }
         });
     }
+}
+
+function podcast_search_submit(ev){
+    ev.preventDefault();
+    var input = $(this).find('input').val();
+    $('#episode-results').empty();
+    $('#podcast-help').hide();
+    console.log("Searching podcasts for: " + input);
+    $.ajax({
+        url:'https://api.spotify.com/v1/search',
+        dataType:'json',
+        headers:{Authorization:"Bearer "+search_token},
+        data:{q:input, type:'episode', limit:50, market:'US'}
+    }).then(function(data){
+        console.log("Podcast search response:", data);
+        var episodes = [];
+        if (data.episodes && data.episodes.items) {
+            for (var i=0;i<data.episodes.items.length; ++i) {
+                if (data.episodes.items[i]) {
+                    episodes.push(data.episodes.items[i]);
+                }
+            }
+        }
+        // Sort by release date (most recent first)
+        episodes.sort(function(a, b) {
+            var dateA = a.release_date || '';
+            var dateB = b.release_date || '';
+            return dateB.localeCompare(dateA);
+        });
+        return episodes;
+    }).then(function(data) {
+        var target = $("#episode-results");
+        if (data.length === 0) {
+            target.append('<div class="search-item"><div class="text"><h4>No podcasts found</h4></div></div>');
+            return;
+        }
+        for (var i=0;i<data.length;++i){
+            target.append(TEMPLATES.search_result_episode(data[i]));
+        }
+    }).fail(function(jqXHR, textStatus, errorThrown) {
+        console.error("Podcast search error:", textStatus, errorThrown, jqXHR.responseText);
+        $("#episode-results").append('<div class="search-item"><div class="text"><h4>Search error: ' + textStatus + '</h4></div></div>');
+    });
 }
 
 function song_search_click(ev){
@@ -1097,18 +1148,20 @@ function song_search_click(ev){
 is_player = false;
 auth_token = null;
 ignore_refresh = true;
+last_synced_spotify_track = null;
 function make_player(ev){
     is_player = !is_player;
     if(!is_player){
         if (ytready) {
-            $('#make-player').text("play music here");
+            $('#make-player').text("sync spotify");
             Y.stopVideo();
         } else {
-            $('#make-player').text("play music here (no youtube)");
+            $('#make-player').text("sync spotify");
         }
         sc_player.stop();
         spotify_stop();
         last_spotify_track = null;
+        last_synced_spotify_track = null;
         $('#ytapiplayer').css('z-index', 900);
         return;
     }
@@ -1117,12 +1170,17 @@ function make_player(ev){
         ignore_refresh = false;
         socket.emit('fetch_auth_token');
     } else {
-        // Resume Spotify playback if we already have a token
-        resume_spotify_if_needed();
+        // Start playing the current track/episode immediately
+        var src = now_playing.get('src');
+        var trackid = now_playing.get('trackid');
+        var pos = now_playing.get('pos') || 0;
+        if (src && trackid) {
+            fix_player(src, trackid, pos, playerpaused);
+        }
     }
     socket.emit('request_volume');
 
-    $('#make-player').text('stop music here');
+    $('#make-player').text('disconnect spotify');
 }
 
 function spotify_connect(url) {
@@ -1197,7 +1255,8 @@ function do_free_airhorn(){
     });
 }
 function kill_playing(){
-    var msg = "Are you sure you want to skip this song?";
+    var isPodcast = now_playing.get('type') === 'episode';
+    var msg = isPodcast ? "Are you sure you want to skip this podcast?" : "Are you sure you want to skip this song?";
     confirm_dialog(msg, function(){
         socket.emit("kill_playing");
     });
@@ -1408,9 +1467,12 @@ window.addEventListener('load', function(){
 
     $('#song-search').on('submit', song_search_submit);
     $('#uri-search').on('submit', uri_search_submit);
+    $('#podcast-search').on('submit', podcast_search_submit);
     $('#qbd-results').on('click', '.search-result',
                          song_search_click);
     $('#search-results').on('click', '.search-result',
+                            song_search_click);
+    $('#podcast-search-results').on('click', '.search-result',
                             song_search_click);
     $('#mute-all').on('click', mute_all);
     $('#do-nuke-queue').on('click', do_nuke_queue);

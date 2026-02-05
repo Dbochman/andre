@@ -33,7 +33,7 @@
                 </div>
                 <div id="add-song-tab">
                     <form id="uri-search">
-                        <input type="text" placeholder="Search Text">
+                        <input type="text" placeholder="Search Music">
                     </form>
                     <div id="search-results">
                         <div id="uri-help">
@@ -44,6 +44,16 @@
                         <div id="youtube-results">
                         </div>
                         <div id="soundcloud-results">
+                        </div>
+                    </div>
+                    <form id="podcast-search">
+                        <input type="text" placeholder="Search Podcasts">
+                    </form>
+                    <div id="podcast-search-results">
+                        <div id="podcast-help">
+                            <h4>Search Spotify for Podcasts.</h4>
+                        </div>
+                        <div id="episode-results">
                         </div>
                     </div>
                 </div>
@@ -65,7 +75,7 @@
                     <h4>Coming Soon!</h4>
                 </div>
                 <div id="other-tab">
-                    <a href="javascript:void(0);" id="make-player" class="left-button">play music here (no youtube)</a>
+                    <a href="javascript:void(0);" id="make-player" class="left-button">sync spotify</a>
                     <a href="javascript:void(0);" id="change-color" class="left-button">change
                         colors</a>
                     <a href="javascript:void(0);" id="feel-shame" class="left-button">hide shame</a>
@@ -128,6 +138,12 @@
         <div class="text"><h4><%=name%></h4><h5><%=artists.map(function(a){return a.name;}).join(", ")%></h5><h6><%=seconds_to_time(Math.floor(duration_ms/1000))%> from Spotify</h6></div>
     </div>
 </script>
+<script type="underscore/template" id="search_result_episode">
+    <div class="search-result search-item" data-key="spotify:episode:<%-id%>" data-src="spotify">
+        <div class="icon" <% if (images && images.length > 0) { %>style="background-image:url(<%=images[images.length-1].url%>)" <% } %>></div>
+        <div class="text"><h4><%=name%></h4><h5><% if (obj.show && obj.show.name) { %><%=obj.show.name%><% } else { %>Podcast Episode<% } %></h5><h6><%=seconds_to_time(Math.floor(duration_ms/1000))%> from Spotify</h6></div>
+    </div>
+</script>
 <script type="underscore/template" id="search_result_youtube">
     <div class="search-result search-item" data-key="<%-id%>" data-src="youtube">
          <div class="icon" style="background-image:url(<%-snippet.thumbnails.default.url%>)"></div>
@@ -154,7 +170,7 @@
 
             <div class="queue-item-text">
                 <h3><%=title%></h3>
-                <h4><%=artist%> (<%=eta%>)</h4>
+                <h4><% if (obj.secondary_text) { %><%=obj.secondary_text%><% } else { %><%=artist%><% } %> (<%=eta%>)</h4>
             </div>
 
             <div class="jammers">
@@ -248,7 +264,7 @@
         title="<%-user%>"></div>
     <div id="now-playing-text">
         <h1><%=title%></h1>
-        <h2><%=artist%></h2>
+        <h2><% if (obj.secondary_text) { %><%=obj.secondary_text%><% } else { %><%=artist%><% } %></h2>
         <%
             var qer_comments = _.filter(comments, function(c) {
                 return user === c.user;

@@ -721,7 +721,7 @@ def search_spotify():
         token = token.get('access_token', token)
     sp = spotipy.Spotify(auth=token)
     search_result = sp.search(q, 25)
-    
+
     parsed_result = []
     items = search_result.get('tracks', {}).get('items')
     for track in items:
@@ -734,9 +734,9 @@ def search_spotify():
         images = track.get('album', {}).get('images', "")
         if len(images) > 0:
             current_track['images'] = images[0]
-        
+
         parsed_result.append(current_track)
-        
+
     return jsonify(parsed_result)
 
 

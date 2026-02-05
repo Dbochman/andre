@@ -133,6 +133,13 @@ float:left; width:30px; height:30px;
                     border:2px solid rgba(255,255,255,0.4);}
 #uri-search {margin:0;}
 
+#podcast-search input {width:376px;padding:10px;
+                    background: rgba(2555,255,255,0.3);
+                    color: #FFFFFF;border-radius:0;
+                    border:2px solid rgba(255,255,255,0.4);}
+#podcast-search {margin:0; margin-top:20px; border-top: 1px solid rgba(255,255,255,0.2); padding-top:10px;}
+#podcast-help h4 {margin: 20px; color: var(--accent-color);}
+
 #bottom-row {width:100%;}
 .queue-item {
   width:100%;
@@ -141,6 +148,17 @@ float:left; width:30px; height:30px;
 .queue-item-inner{width:100%;background: rgb(31, 31, 31);height:65px;}
 .queue-item-inner:hover{background: rgb(71, 71, 71);}
 .queue-item h3, .queue-item h4, .queue-item h5 {margin:0;}
+.queue-item h3 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-height: 1.4em;
+}
+.queue-item h4 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 .queue-item-text {padding-left:10px;display:inline-block;height:65px;text-overflow:hidden;overflow:hidden;float:left;}
 .queue-item .album-image {height:61px;width:61px;margin:2px;background:url(http://placekitten.com/65/65);background-size:cover;display:inline-block;float:left;}
 .queue-item .person-image {height:65px;width:43px;background:url(http://placekitten.com/43/65);position:absolute;right:0;background-size:cover;display:inline-block;}
@@ -310,4 +328,16 @@ background-position: center center;
     background-size: 50% 50%;
     background-position: center;
     background-repeat: no-repeat;
+}
+
+/* Podcast badge for episode search results */
+.badge-podcast {
+    background: #1DB954;
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 8px;
+    font-weight: bold;
+    text-transform: uppercase;
 }

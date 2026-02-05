@@ -573,41 +573,104 @@ class DB(object):
         token = auth.get_access_token()
         if isinstance(token, dict):
             token = token.get('access_token', token)
-        response = requests.get(
+
+        resp = requests.get(
             'https://api.spotify.com/v1/tracks/'+trackid.split(':')[-1],
-            headers={'Authorization': 'Bearer ' + str(token)}).json()
-#        if 'US' not in response['available_markets']:
-#            raise Exception('track not available in our region')
+            headers={'Authorization': 'Bearer ' + str(token)},
+            timeout=10)
 
-        #saw some track with no album images
-        big_img = None
-        img = None
+        if resp.status_code != 200:
+            logger.error("Spotify API HTTP error %d fetching track %s", resp.status_code, trackid)
+            raise Exception(f"Spotify API error: HTTP {resp.status_code}")
 
-        if 'album' in response:
-            num_images = len (response['album']['images'])
+        response = resp.json()
 
-            if num_images > 1:
-                big_img = response['album']['images'][0]['url']
-                img = big_img
+        # Check for API errors in response body
+        if 'error' in response:
+            logger.error("Spotify API error fetching track %s: %s", trackid, response.get('error'))
+            raise Exception(f"Spotify API error: {response.get('error', {}).get('message', 'Unknown error')}")
 
-            if num_images > 2:
-                img = response['album']['images'][1]['url']
-
+        big_img, img = self._extract_images(response.get('album', {}).get('images', []))
 
         song = dict(data=response, src='spotify', trackid=trackid,
                     title=response['name'],
-                    artist=", ".join([a['name'] for a in response['artists']]),
-                    duration=int(response['duration_ms']) // 1000,
+                    artist=", ".join([a['name'] for a in response.get('artists', [])]),
+                    duration=int(response.get('duration_ms', 0)) // 1000,
                     big_img=big_img,
                     auto=not scrobble,
                     img=img)
 
-        print("get_spotify_song", response.get('artists', []))
-        # TODO requests.get('')
-
-        # print spotify_client.me()
-
+        logger.debug("get_spotify_song: %s", song['title'])
         return song
+
+    def _extract_images(self, images_list):
+        """Extract big and small image URLs from a list of image objects."""
+        big_img = None
+        img = None
+        if images_list:
+            num_images = len(images_list)
+            if num_images > 0:
+                big_img = images_list[0].get('url')
+                img = big_img
+            if num_images > 1:
+                img = images_list[-1].get('url')
+        return big_img, img
+
+    def get_spotify_episode(self, episode_id):
+        """Fetch episode metadata from Spotify API.
+
+        Args:
+            episode_id: Either a full URI (spotify:episode:xxx) or just the ID
+        """
+        token = auth.get_access_token()
+        if isinstance(token, dict):
+            token = token.get('access_token', token)
+
+        # Extract ID if full URI was passed
+        if ':' in episode_id:
+            episode_id = episode_id.split(':')[-1]
+
+        resp = requests.get(
+            'https://api.spotify.com/v1/episodes/' + episode_id,
+            headers={'Authorization': 'Bearer ' + str(token)},
+            timeout=10)
+
+        if resp.status_code != 200:
+            logger.error("Spotify API HTTP error %d fetching episode %s", resp.status_code, episode_id)
+            raise Exception(f"Spotify API error: HTTP {resp.status_code}")
+
+        response = resp.json()
+
+        # Check for API errors
+        if 'error' in response:
+            logger.error("Spotify API error fetching episode %s: %s", episode_id, response.get('error'))
+            raise Exception(f"Spotify API error: {response.get('error', {}).get('message', 'Unknown error')}")
+
+        if 'name' not in response:
+            logger.error("Invalid episode response for %s: missing 'name' field", episode_id)
+            raise Exception(f"Invalid episode data: missing required fields")
+
+        big_img, img = self._extract_images(response.get('images', []))
+        show_name = response.get('show', {}).get('name', '') if response.get('show') else ''
+
+        episode = dict(
+            data=response,
+            src='spotify',
+            trackid='spotify:episode:' + episode_id,
+            title=response['name'],
+            artist=show_name,
+            secondary_text=show_name,
+            show_name=show_name,
+            publisher=response.get('show', {}).get('publisher', '') if response.get('show') else '',
+            duration=int(response.get('duration_ms', 0)) // 1000,
+            big_img=big_img,
+            img=img,
+            type='episode',
+            auto=False,
+        )
+
+        logger.debug("get_spotify_episode: %s - %s", episode['title'], show_name)
+        return episode
 
     def add_spotify_song(self, userid, trackid, penalty=0, force_first=False,
                          scrobble=True):
@@ -616,11 +679,19 @@ class DB(object):
         # the line. until we can make bender run on core JS it's the best
         # path
         logger.debug("adding spotify song %s", trackid)
-        song = self.get_spotify_song(trackid, scrobble)
+
+        # Detect if this is an episode URI (format: spotify:episode:xxx)
+        uri_parts = trackid.split(':')
+        is_episode = len(uri_parts) >= 2 and uri_parts[1] == 'episode'
+
+        if is_episode:
+            song = self.get_spotify_episode(trackid)
+        else:
+            song = self.get_spotify_song(trackid, scrobble)
 
         new_id = self._add_song(userid, song, force_first, penalty)
 
-        if scrobble:
+        if scrobble and not is_episode:
             self.big_scrobble(userid, 'spotify:track:'+trackid.split(':')[-1])
 
         return new_id
