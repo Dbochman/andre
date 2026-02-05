@@ -1,14 +1,25 @@
-# Enhanced Paused State Display
+# Enhanced Paused State Display & Spotify Playback Improvements
 
 ## Overview
 
-When the player is paused, make it visually obvious to users by:
-1. Displaying "PAUSED" title with Bender quote in the now-playing text area
-2. Showing current song's album art with a pause icon overlay
-3. Replacing Bender headshot in the person image area
-4. Swapping airhorn buttons with an "unpause everything" button
+This PR includes two major feature sets:
 
-## Visual Design
+### 1. Enhanced Paused State Display
+When the player is paused, make it visually obvious to users by:
+- Displaying "PAUSED" title with Bender quote in the now-playing text area
+- Showing current song's album art with a pause icon overlay
+- Replacing user image with Bender headshot
+- Adding "unpause everything" button above airhorn buttons
+
+### 2. Spotify Playback Auto-Resume
+Improve the user experience by automatically resuming Spotify playback when:
+- Clicking "play music here" button
+- Clicking airhorn or free airhorn buttons
+- Receiving auth token after page refresh
+
+---
+
+## Visual Design (Paused State)
 
 | Area | When Playing | When Paused |
 |------|--------------|-------------|
@@ -18,197 +29,118 @@ When the player is paused, make it visually obvious to users by:
 | **Airhorn buttons** | Visible | Visible, with "unpause everything" button above |
 | **Browser tab** | "Song - Artist \| Andre" | "PAUSED \| Andre" |
 
-## Implementation
+---
+
+## Files Modified
+
+| File | Changes |
+|------|---------|
+| `static/css/app.css` | Add `.paused` class for album art with pause icon overlay |
+| `templates/main.html` | Add `#airhorn-unpause-btn` button at top of `#airhorn-tab` |
+| `static/js/app.js` | Paused state UI, Spotify auto-resume helper, button handlers |
+| `db.py` | No changes (revert of earlier skip-while-paused change) |
+
+---
+
+## Implementation Details
 
 ### Part 1: CSS Changes (`static/css/app.css`)
 
-Add at end of file - paused state styling for album art with pause icon overlay:
+Paused state styling for album art with pause icon overlay using CSS pseudo-elements:
 
 ```css
-/* Paused state - album art overlay */
-/* Note: #now-playing-album already has position:absolute, keep it */
-
 #now-playing-album.paused::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    /* Dark overlay */
     background: rgba(0, 0, 0, 0.3);
     z-index: 1001;
 }
 
 #now-playing-album.paused::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 100px;
-    height: 100px;
-    background-color: rgba(0, 0, 0, 0.8);
-    border-radius: 50%;
+    /* Pause icon - circular with two bars */
     z-index: 1002;
-    /* Pause icon bars using gradient */
-    background-image: linear-gradient(to right,
-        transparent 25%,
-        #fff 25%,
-        #fff 40%,
-        transparent 40%,
-        transparent 60%,
-        #fff 60%,
-        #fff 75%,
-        transparent 75%
-    );
-    background-size: 50% 50%;
-    background-position: center;
-    background-repeat: no-repeat;
 }
 ```
 
 ### Part 2: HTML Changes (`templates/main.html`)
 
-Insert new unpause button immediately after `#do-airhorn` button, before `#do-free-airhorn`:
-
-**Location**: Inside `#airhorn-tab` div, between the airhorn button and free airhorn button
+Unpause button added at top of airhorn tab (hidden by default):
 
 ```html
 <div id="airhorn-tab" class="visible">
-    <a href="javascript:void(0);" id="do-airhorn" class="left-button">airhorn</a>
     <a href="javascript:void(0);" id="airhorn-unpause-btn" class="left-button" style="display:none;">unpause everything</a>
+    <a href="javascript:void(0);" id="do-airhorn" class="left-button">airhorn</a>
     <a href="javascript:void(0);" id="do-free-airhorn" class="left-button">free airhorn</a>
-    <div id="airhorn-history">
-    </div>
+    ...
 </div>
 ```
 
 ### Part 3: JavaScript Changes (`static/js/app.js`)
 
-#### Change 1: Modify `NowPlayingView.render()` method
+#### 3.1: Spotify Auto-Resume Helper
 
-**Location**: Inside the `NowPlayingView` Backbone view definition (around line 417)
-
-**Why**: The view listens to model changes and re-renders automatically. We need to handle paused state in the view itself to prevent conflicts.
-
-**Replace the existing render method with:**
+New helper function with guards to prevent unwanted playback:
 
 ```javascript
-render: function(){
-    // Handle paused state
-    if (playerpaused) {
-        // Render paused content (intentionally omits #playing-buttons and comment button)
-        this.$el.html(
-            '<div id="now-playing-person" style="background-image:url(/static/theechonestcom.png);"></div>' +
-            '<div id="now-playing-text">' +
-                '<h1>PAUSED</h1>' +
-                '<h2>"Bite my shiny metal pause button!"</h2>' +
-            '</div>' +
-            '<div id="now-playing-jammers"></div>'
-        );
-
-        // Show next song's album art with pause overlay
-        var nextSong = playlist.at(0);
-        if (nextSong && nextSong.get('img')) {
-            $('#now-playing-album').css('background-image', 'url(' + nextSong.get('img') + ')');
-        } else {
-            $('#now-playing-album').css('background-image', '');
-        }
-
-        $('#now-playing-album').addClass('paused');
-        this.$el.removeClass("autoplay");
-        _window_resize();
-        return this.$el;
-    }
-
-    // Normal render when not paused
-    if(!this.model || !this.model.get("title")){
+function resume_spotify_if_needed() {
+    // Only resume if: we have a token, we're the player, not paused, and source is Spotify
+    if (!auth_token || !is_player || playerpaused) {
         return;
     }
-    this.$el.html(TEMPLATES.now_playing(this.model.toJSON()));
-    $('#now-playing-album').css('background-image',
-                                'url('+this.model.get("big_img")+')')
-    $('#now-playing-album').removeClass('paused');
-    this.$el.css({'background-color':
-                    '#'+this.model.get("background_color"),
-                    'color':'#'+this.model.get('foreground_color')});
-    this.$el.toggleClass("autoplay", this.model.get("auto"))
-    _window_resize();
-    return this.$el;
+    var src = now_playing.get('src');
+    if (src !== 'spotify') {
+        return;
+    }
+    $.ajax('https://api.spotify.com/v1/me/player/play', {
+        method: 'PUT',
+        headers: {
+            Authorization: "Bearer " + auth_token
+        }
+    });
 }
 ```
 
-#### Change 2: Simplify `now_playing_update` handler
+#### 3.2: Auto-Resume on Auth Token
 
-**Location**: The `socket.on('now_playing_update', ...)` handler
-
-**Replace the entire handler with:**
+When auth token is received and we're the player, resume Spotify:
 
 ```javascript
-socket.on('now_playing_update', function(data){
-    playerpaused = data.paused;
+socket.on('auth_token_update', function(data){
+    auth_token = data['token'];
+    // ... token timeout handling ...
+    resume_spotify_if_needed();
+});
+```
 
-    // Update button states
-    if (playerpaused) {
-        $('#pause-button').text('unpause everything');
-        $('#do-airhorn, #do-free-airhorn').hide();
-        $('#airhorn-unpause-btn').show();
-        document.title = "PAUSED | Andre";
+#### 3.3: Auto-Resume on Airhorn
+
+Both airhorn functions enable player mode and resume Spotify:
+
+```javascript
+function do_airhorn(){
+    if (!is_player) {
+        make_player();
     } else {
-        $('#pause-button').text('pause everything');
-        $('#do-airhorn, #do-free-airhorn').show();
-        $('#airhorn-unpause-btn').hide();
+        resume_spotify_if_needed();
     }
-
-    // Always keep now_playing model in sync - this triggers view re-render
-    if (data.title) {
-        now_playing.clear({silent:true});
-        now_playing.set(data);
-        if (!playerpaused) {
-            document.title = data.title + " - " + data.artist + " | Andre";
-        }
-    } else if (playerpaused) {
-        // Paused with no title data - trigger render anyway
-        now_playing.trigger('change');
-    }
-
-    // Notifications (only when playing)
-    if (!playerpaused && data.title) {
-        if(window.webkitNotifications
-                && window.webkitNotifications.checkPermission() == 0
-                && SHOW_NOTIFICATIONS){
-            var note = window.webkitNotifications.createNotification(data.img,
-                                                data.title, data.artist);
-                note.show();
-                setTimeout(function(){note.close();}, 7000);
-        }
-    }
-
-    // Player sync logic
-    if(is_player){
-        fix_player(now_playing.get('src'), now_playing.get('trackid'), data.pos, playerpaused);
-    }
-});
+    // ... airhorn dialog ...
+}
 ```
 
-#### Change 3: Add click handler for unpause button
+#### 3.4: Paused State Rendering
 
-**Location**: Inside the `window.addEventListener('load', ...)` block, after the `$('#do-free-airhorn').on('click', do_free_airhorn);` line
+`NowPlayingView.render()` handles paused state display:
+- Shows "PAUSED" title with Bender quote
+- Shows current song's album art (not next song)
+- Adds `.paused` class for CSS overlay
 
-```javascript
-$('#airhorn-unpause-btn').on('click', function(){
-    console.log("unpause button (from airhorn area)");
-    socket.emit("unpause");
-});
-```
+#### 3.5: Button State Management
 
-## Files to Modify
+`now_playing_update` handler toggles:
+- Unpause button visibility
+- Pause button text
+- Browser tab title
 
-| File | Changes |
-|------|---------|
-| `static/css/app.css` | Add `.paused` class for album art with pause icon overlay |
-| `templates/main.html` | Add `#airhorn-unpause-btn` button inside `#airhorn-tab` |
-| `static/js/app.js` | Modify `NowPlayingView.render()`, update `now_playing_update` handler, add click handler |
+---
 
 ## Technical Notes
 
@@ -217,57 +149,58 @@ $('#airhorn-unpause-btn').on('click', function(){
 - `.paused::before` (dark overlay): z-index 1001
 - `.paused::after` (pause icon): z-index 1002
 
-### Socket Events
-- `socket.emit("unpause")` - Confirmed correct event name (used in existing `pause_button` function)
-- Server handler: `on_unpause` in `app.py`
+### Spotify Resume Guards
+The `resume_spotify_if_needed()` helper checks:
+1. `auth_token` exists
+2. `is_player` is true (this browser is the active player)
+3. `playerpaused` is false (Andre is not paused)
+4. `now_playing.get('src')` is 'spotify' (not YouTube/SoundCloud)
 
-### Assets Used
-- `/static/theechonestcom.png` - Bender headshot for person image area
+This prevents:
+- Resuming Spotify when globally paused
+- Audio overlap when playing YouTube/SoundCloud
+- Unnecessary API calls without auth
 
-### Backbone View Integration
-- `NowPlayingView` listens to `'all'` events on `now_playing` model
-- Paused state rendering is handled in the view's `render()` method
-- This prevents DOM conflicts from model updates overwriting paused content
+### Unpause Flow
+When clicking "unpause everything":
+1. `socket.emit("unpause")` sent to server
+2. Server clears paused state, sends `now_playing_update`
+3. `fix_player()` is called with `paused=false`
+4. `fix_player()` calls `spotify_play()` which resumes playback
 
-### Edge Cases Handled
-- **Empty queue**: If `playlist.at(0)` is undefined, album art is cleared
-- **Page load while paused**: View render checks `playerpaused` first
-- **Paused without title data**: Triggers view re-render manually
-- **View re-render conflicts**: Paused rendering handled in view, not handler
+No manual Spotify API call needed - `fix_player` handles it.
 
-### Intentional UI Changes When Paused
-- **#playing-buttons removed**: Spotify/YouTube/Jam links hidden (nothing to interact with when paused)
-- **Comment button removed**: No active song to comment on
-- **ES5 syntax**: Using string concatenation instead of template literals for compatibility
+---
 
 ## Verification Steps
 
-1. Start the app or use live site
-2. Play a song, verify normal display
-3. Click "pause everything" (in Other tab)
-4. Verify:
-   - Subtitle shows "Bite my shiny metal pause button!"
-   - Album area shows next song's art with pause icon overlay
+### Paused State UI
+1. Play a song, verify normal display
+2. Click "pause everything" (in Other tab)
+3. Verify:
+   - Title shows "PAUSED", subtitle shows Bender quote
+   - Album art shows current song with pause icon overlay
    - Person image shows Bender headshot
-   - Airhorn + free airhorn buttons hidden
-   - "unpause everything" button visible
-   - Browser tab title shows "PAUSED | Andre"
-5. Click "unpause everything" button
-6. Verify:
-   - Normal now-playing display returns immediately
-   - Correct song title/artist shown
-   - Album art shows current song (no pause overlay)
-   - Airhorn buttons visible again
-7. Refresh page while paused - verify paused state displays correctly
-8. Test with empty queue while paused - verify no errors
-9. **New**: Verify that receiving a new `now_playing_update` while paused doesn't flicker or break the paused UI
+   - "unpause everything" button visible above airhorn buttons
+   - Browser tab shows "PAUSED | Andre"
+4. Click "unpause everything" - verify normal display returns
+
+### Spotify Auto-Resume
+1. Refresh page while music is playing
+2. Click "airhorn" button
+3. Verify: Music resumes AND airhorn dialog appears (one click, not two)
+4. Test with YouTube source - verify no Spotify playback starts
+
+---
 
 ## Review History
 
-- **v1**: Initial plan with center overlay
-- **v2**: Fixed z-index issues (1100-1102), added initial state handling
-- **v3**: Removed center overlay, moved paused text to title/subtitle area, added Bender quote, added pause icon on album art
-- **v4**: Fixed DOM replacement issue (update specific elements instead of replacing HTML), removed early return to keep model in sync, added empty queue handling
-- **v5**: Fixed Backbone view conflict by moving paused rendering into `NowPlayingView.render()` method, simplified handler, improved element location references
-- **v6**: Changed to ES5 string concatenation for compatibility, documented intentional removal of playing-buttons and comment button when paused
-- **v7**: Fixed CSS layout bug - removed `position: relative` override that broke album positioning
+- **v1-v7**: Paused state UI iterations (see git history)
+- **v8**: Changed to show current song's album art (not next song)
+- **v9**: Keep airhorn buttons visible when paused, unpause above them
+- **v10**: Auto-enable player mode when clicking airhorn
+- **v11**: Resume Spotify on unpause button click
+- **v12**: Resume Spotify on play/airhorn actions
+- **v13**: Auto-resume on auth token received (one-click airhorn after refresh)
+- **v14**: Add guards to prevent unwanted playback (paused state, non-Spotify source)
+- **v15**: Consolidate Spotify resume into helper function, remove redundant calls

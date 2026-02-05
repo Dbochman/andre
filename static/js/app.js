@@ -644,6 +644,24 @@ function spotify_play(id, pos, retries=5) {
     });
 }
 
+// Helper to resume Spotify playback with guards
+function resume_spotify_if_needed() {
+    // Only resume if: we have a token, we're the player, not paused, and source is Spotify
+    if (!auth_token || !is_player || playerpaused) {
+        return;
+    }
+    var src = now_playing.get('src');
+    if (src !== 'spotify') {
+        return;
+    }
+    $.ajax('https://api.spotify.com/v1/me/player/play', {
+        method: 'PUT',
+        headers: {
+            Authorization: "Bearer " + auth_token
+        }
+    });
+}
+
 search_token = null;
 search_token_clear = 0;
 socket.on('search_token_update', function(data){
@@ -667,15 +685,8 @@ socket.on('auth_token_update', function(data){
         auth_token_clear = 0;
         socket.emit('fetch_auth_token');
     }, data['time_left']*1000);
-    // Resume Spotify playback now that we have a token (if we're the player)
-    if (is_player && auth_token) {
-        $.ajax('https://api.spotify.com/v1/me/player/play', {
-            method: 'PUT',
-            headers: {
-                Authorization: "Bearer " + auth_token
-            }
-        });
-    }
+    // Resume Spotify playback now that we have a token
+    resume_spotify_if_needed();
 });
 
 socket.on('auth_token_refresh', function(data){
@@ -1107,12 +1118,7 @@ function make_player(ev){
         socket.emit('fetch_auth_token');
     } else {
         // Resume Spotify playback if we already have a token
-        $.ajax('https://api.spotify.com/v1/me/player/play', {
-            method: 'PUT',
-            headers: {
-                Authorization: "Bearer " + auth_token
-            }
-        });
+        resume_spotify_if_needed();
     }
     socket.emit('request_volume');
 
@@ -1167,14 +1173,8 @@ function do_airhorn(){
     // Ensure player is active and Spotify is playing before airhorning
     if (!is_player) {
         make_player();
-    } else if (auth_token) {
-        // Already player, but resume Spotify in case it's paused
-        $.ajax('https://api.spotify.com/v1/me/player/play', {
-            method: 'PUT',
-            headers: {
-                Authorization: "Bearer " + auth_token
-            }
-        });
+    } else {
+        resume_spotify_if_needed();
     }
     var msg = "Do you feel lucky punk?";
     if(is_hohoholiday()){
@@ -1189,14 +1189,8 @@ function do_free_airhorn(){
     // Ensure player is active and Spotify is playing before airhorning
     if (!is_player) {
         make_player();
-    } else if (auth_token) {
-        // Already player, but resume Spotify in case it's paused
-        $.ajax('https://api.spotify.com/v1/me/player/play', {
-            method: 'PUT',
-            headers: {
-                Authorization: "Bearer " + auth_token
-            }
-        });
+    } else {
+        resume_spotify_if_needed();
     }
     confirm_dialog("Is this awesome airhorn worthy?", function(){
         socket.emit('free_airhorn');
@@ -1426,15 +1420,7 @@ window.addEventListener('load', function(){
     $('#airhorn-unpause-btn').on('click', function(){
         console.log("unpause button (from airhorn area)");
         socket.emit("unpause");
-        // Also resume Spotify playback if we have a token
-        if (auth_token) {
-            $.ajax('https://api.spotify.com/v1/me/player/play', {
-                method: 'PUT',
-                headers: {
-                    Authorization: "Bearer " + auth_token
-                }
-            });
-        }
+        // Spotify playback resumes via fix_player when now_playing_update arrives
     });
     $('#kill-playing').on('click', kill_playing);
     $('#feel-shame').on('click', feel_shame);
