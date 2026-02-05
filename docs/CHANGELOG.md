@@ -52,6 +52,11 @@ All notable changes to Andre are documented in this file.
   - Applies to Spotify, SoundCloud, and YouTube players
   - Commit: `f46c4bf`
 
+- **Local Volume Independence** - Server volume broadcasts no longer override local playback volume
+  - Server volume only updates the UI slider, not actual playback
+  - Airhorns now use local volume (`volumeBeforeMute`) instead of server volume
+  - Fixes issue where airhorns were nearly silent when server volume was set low
+
 - **Bender Empty Queue During Podcasts** - Fixed Bender not generating song recommendations while a podcast episode is playing
   - Added `is_valid_track_seed()` helper to skip episode URIs when selecting seeds
   - Falls back to last valid track or Billy Joel when only episodes are available

@@ -908,29 +908,17 @@ socket.on('volume', function(data){
     var parsedVol = parseInt(data, 10);
     volume = Number.isNaN(parsedVol) ? 95 : parsedVol;
 
-    // Update volumeBeforeMute if not currently muted, so unmute uses latest value
-    if (!localMuted) {
-        volumeBeforeMute = volume;
-    }
-
-    // Only apply volume to players if not locally muted
-    if (is_player && !localMuted) {
-        spotify_volume(volume);
-        if (typeof sc_player !== 'undefined' && sc_player.set_volume) {
-            sc_player.set_volume(volume);
-        }
-        if (ytready) {
-            Y.setVolume(volume * yt_volume_adjust);
-        }
-    }
-
+    // Server volume only updates the UI slider - local playback volume is controlled independently
+    // via the local mute button and volumeBeforeMute (user's Spotify device volume)
     $this.append(TEMPLATES.volume_chunk({"volume":data}));
 });
 
 socket.on('do_airhorn', function(vol, name){
     console.log('DO AIRHORN EVENT');
     sort_airhorns(); // completion of all airhorn loading is asynchronous!
-    vol = parseFloat(vol) * volume / 100;
+    // Use local volume (volumeBeforeMute) for airhorn playback, not server volume
+    var localVol = localMuted ? 0 : volumeBeforeMute;
+    vol = parseFloat(vol) * localVol / 100;
     if (is_player) {
         console.log('AIRHOOORN');
         // pick a random airhorn
