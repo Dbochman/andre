@@ -662,6 +662,30 @@ function resume_spotify_if_needed() {
     });
 }
 
+// Sync user's Spotify to current playback position (for joining mid-song)
+function sync_to_current_playback() {
+    if (!auth_token || !is_player || playerpaused) {
+        return;
+    }
+    var src = now_playing.get('src');
+    var trackid = now_playing.get('trackid');
+    var duration = now_playing.get('duration');
+
+    if (!trackid) {
+        console.log("sync_to_current_playback: no track playing");
+        return;
+    }
+
+    // Calculate current position from duration and remaining time
+    var pos = 0;
+    if (!isNaN(duration) && !isNaN(remaining) && remaining > 0) {
+        pos = duration - remaining;
+    }
+
+    console.log("sync_to_current_playback: syncing to", src, trackid, "at position", pos);
+    fix_player(src, trackid, pos, playerpaused);
+}
+
 search_token = null;
 search_token_clear = 0;
 socket.on('search_token_update', function(data){
@@ -685,8 +709,8 @@ socket.on('auth_token_update', function(data){
         auth_token_clear = 0;
         socket.emit('fetch_auth_token');
     }, data['time_left']*1000);
-    // Resume Spotify playback now that we have a token
-    resume_spotify_if_needed();
+    // Sync to current playback position now that we have a token
+    sync_to_current_playback();
 });
 
 socket.on('auth_token_refresh', function(data){
@@ -1117,8 +1141,8 @@ function make_player(ev){
         ignore_refresh = false;
         socket.emit('fetch_auth_token');
     } else {
-        // Resume Spotify playback if we already have a token
-        resume_spotify_if_needed();
+        // Sync to current playback position if we already have a token
+        sync_to_current_playback();
     }
     socket.emit('request_volume');
 
