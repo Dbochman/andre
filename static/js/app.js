@@ -547,7 +547,8 @@ function onYTPlayerReady(pos) {
     console.log(pos);
     return function(event) {
         event.target.seekTo(pos);
-        event.target.setVolume(volume * yt_volume_adjust);
+        // Respect local mute state when setting volume
+        event.target.setVolume(localMuted ? 0 : (volume * yt_volume_adjust));
         event.target.playVideo();
     }
 }
@@ -592,7 +593,8 @@ function fix_player(src, id, pos, paused){
         last_synced_spotify_track = id;
         console.log("Syncing to Spotify track:", id, "at position:", pos);
         spotify_play(id, pos);
-        spotify_volume(volume);
+        // Respect local mute state when setting volume
+        spotify_volume(localMuted ? 0 : volume);
       }
     }
     if (src == 'soundcloud'){
@@ -602,7 +604,8 @@ function fix_player(src, id, pos, paused){
         $('#ytapiplayer').data('youtube_hidden', 'true');
         $('#ytapiplayer').css('z-index', '900');
         sc_player.play(id, pos);
-        sc_player.set_volume(volume);
+        // Respect local mute state when setting volume
+        sc_player.set_volume(localMuted ? 0 : volume);
       }
     } else if (src == 'youtube'){
         if (ytready) {
@@ -616,7 +619,8 @@ function fix_player(src, id, pos, paused){
                 $('#ytapiplayer').data('youtube_hidden', 'false');
                 $('#ytapiplayer').css('z-index', '1100');
                 Y.loadVideoById(id, pos);
-                Y.setVolume(volume * yt_volume_adjust);
+                // Respect local mute state when setting volume
+                Y.setVolume(localMuted ? 0 : (volume * yt_volume_adjust));
             }
         }
     }
@@ -698,6 +702,13 @@ socket.on('auth_token_update', function(data){
     }, data['time_left']*1000);
     // Resume Spotify playback now that we have a token
     resume_spotify_if_needed();
+    // Sync local volumeBeforeMute with actual Spotify device volume (only if not muted)
+    get_spotify_volume(function(spotifyVol) {
+        if (spotifyVol !== null && !localMuted) {
+            volumeBeforeMute = spotifyVol;
+            console.log('Synced volumeBeforeMute from Spotify device:', spotifyVol);
+        }
+    });
 });
 
 socket.on('auth_token_refresh', function(data){
@@ -827,6 +838,34 @@ socket.on('player_position', function(src, track, pos){
     }
 });
 
+// Get current Spotify player state including volume
+function get_spotify_volume(callback) {
+    if (!auth_token) {
+        console.log('No auth token for Spotify volume read');
+        callback(null);
+        return;
+    }
+    $.ajax('https://api.spotify.com/v1/me/player', {
+        method: 'GET',
+        headers: {
+            Authorization: "Bearer " + auth_token
+        },
+        success: function(data) {
+            if (data && data.device && typeof data.device.volume_percent !== 'undefined') {
+                console.log('Spotify device volume:', data.device.volume_percent);
+                callback(data.device.volume_percent);
+            } else {
+                console.log('No active Spotify device found');
+                callback(null);
+            }
+        },
+        error: function(xhr, status, error) {
+            console.log('Error getting Spotify player state:', xhr.status, error);
+            callback(null);
+        }
+    });
+}
+
 function spotify_volume(vol, retries = 3) {
     if (!auth_token) {
         console.log('No auth token for Spotify volume control');
@@ -862,21 +901,23 @@ function spotify_volume(vol, retries = 3) {
 socket.on('volume', function(data){
     var $this = $('#volume-tab').empty();
     console.log('volume: ' + data);
-    volume = data;
+    // Parse volume as integer to ensure consistent type (use isNaN to allow 0)
+    var parsedVol = parseInt(data, 10);
+    volume = Number.isNaN(parsedVol) ? 95 : parsedVol;
 
     // Update volumeBeforeMute if not currently muted, so unmute uses latest value
     if (!localMuted) {
-        volumeBeforeMute = data;
+        volumeBeforeMute = volume;
     }
 
     // Only apply volume to players if not locally muted
     if (is_player && !localMuted) {
-        spotify_volume(data);
+        spotify_volume(volume);
         if (typeof sc_player !== 'undefined' && sc_player.set_volume) {
-            sc_player.set_volume(data);
+            sc_player.set_volume(volume);
         }
         if (ytready) {
-            Y.setVolume(data * yt_volume_adjust);
+            Y.setVolume(volume * yt_volume_adjust);
         }
     }
 
@@ -938,6 +979,7 @@ function sort_airhorns() {
 // Local mute state - only affects this user's playback
 var localMuted = false;
 var volumeBeforeMute = 100;
+var mutePending = false;  // Prevent double-click race conditions
 
 function local_mute_toggle(ev) {
     // Only allow mute toggle if user is synced as player
@@ -946,16 +988,32 @@ function local_mute_toggle(ev) {
         return;
     }
 
-    localMuted = !localMuted;
+    // Prevent race conditions from rapid clicking
+    if (mutePending) {
+        console.log('Mute toggle already in progress');
+        return;
+    }
+
     var $button = $('#local-mute');
 
-    if (localMuted) {
-        // Mute: save current volume (use typeof to preserve 0)
-        volumeBeforeMute = (typeof volume !== 'undefined' && volume !== null) ? volume : 100;
-        $button.text('unmute');
-        set_local_volume(0);
+    if (!localMuted) {
+        // Muting: first get actual Spotify volume, then mute
+        mutePending = true;
+        get_spotify_volume(function(spotifyVol) {
+            // Use Spotify's actual volume if available, otherwise fall back to server volume
+            volumeBeforeMute = (spotifyVol !== null) ? spotifyVol :
+                               ((typeof volume !== 'undefined' && volume !== null) ? volume : 100);
+            console.log('Muting. Saving volumeBeforeMute:', volumeBeforeMute,
+                        '(from Spotify:', spotifyVol, ', server volume:', volume, ')');
+            localMuted = true;
+            mutePending = false;
+            $button.text('unmute');
+            set_local_volume(0);
+        });
     } else {
-        // Unmute: restore previous volume
+        // Unmuting: restore previous volume
+        console.log('Unmuting. Restoring volumeBeforeMute:', volumeBeforeMute);
+        localMuted = false;
         $button.text('mute');
         set_local_volume(volumeBeforeMute);
     }

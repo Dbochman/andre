@@ -43,8 +43,10 @@ All notable changes to Andre are documented in this file.
 
 - **Local Mute** - Added local mute button that only affects the current user's playback
   - Re-enabled Spotify Web API volume control with proper error handling (403, 429)
-  - Mute state persists through server volume updates
+  - Reads actual Spotify device volume on sync and mute for accurate restore
+  - Mute state persists through server volume updates and track changes
   - Replaced global "mute all" with per-user "mute" toggle
+  - Added double-click protection and volume 0 edge case handling
   - Added `.cache` to `.gitignore` to prevent token leakage
 
 ### Security
