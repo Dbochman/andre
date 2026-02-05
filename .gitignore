@@ -13,4 +13,5 @@ node_modules/
 .idea/
 .helios/
 static/__MACOSX/.cache
+.cache
 cookies.txt

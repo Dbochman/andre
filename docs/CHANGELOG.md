@@ -39,6 +39,14 @@ All notable changes to Andre are documented in this file.
   - Changed person-image from 43x65px to 65x65px square to match Gravatar aspect ratio
   - Adjusted controls and jammers positioning to accommodate wider images
 
+### Features
+
+- **Local Mute** - Added local mute button that only affects the current user's playback
+  - Re-enabled Spotify Web API volume control with proper error handling (403, 429)
+  - Mute state persists through server volume updates
+  - Replaced global "mute all" with per-user "mute" toggle
+  - Added `.cache` to `.gitignore` to prevent token leakage
+
 ### Security
 
 - **Redis Authentication** - Added password authentication and protected mode in response to DigitalOcean security notice

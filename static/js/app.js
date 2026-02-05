@@ -827,29 +827,50 @@ socket.on('player_position', function(src, track, pos){
     }
 });
 
-function spotify_volume(vol, retries = 5) {
-    // $.ajax('https://api.spotify.com/v1/me/player/volume?volume_percent=' + vol, {
-    //     method: 'PUT',
-    //     headers: {
-    //         Authorization: "Bearer " + auth_token
-    //     },
-    //     statusCode: {
-    //         202:function() {
-    //             if (retries > 0) {
-    //                 retries--;
-    //                 console.log(retries);
-    //                 setTimeout(spotify_volume, 5000, vol);
-    //             }
-    //         }
-    //     }
-    // });
+function spotify_volume(vol, retries = 3) {
+    if (!auth_token) {
+        console.log('No auth token for Spotify volume control');
+        return;
+    }
+    vol = Math.max(0, Math.min(100, Math.round(vol)));
+    $.ajax('https://api.spotify.com/v1/me/player/volume?volume_percent=' + vol, {
+        method: 'PUT',
+        headers: {
+            Authorization: "Bearer " + auth_token
+        },
+        error: function(xhr, status, error) {
+            if (xhr.status === 404 && retries > 0) {
+                // No active device, retry after delay
+                console.log('Spotify volume: no active device, retrying...', retries);
+                setTimeout(function() { spotify_volume(vol, retries - 1); }, 2000);
+            } else if (xhr.status === 403) {
+                console.log('Spotify volume: insufficient permissions (need user-modify-playback-state scope)');
+            } else if (xhr.status === 429) {
+                // Rate limited - wait and retry
+                var retryAfter = xhr.getResponseHeader('Retry-After') || 5;
+                console.log('Spotify volume: rate limited, retrying in', retryAfter, 'seconds');
+                if (retries > 0) {
+                    setTimeout(function() { spotify_volume(vol, retries - 1); }, retryAfter * 1000);
+                }
+            } else if (xhr.status !== 204 && xhr.status !== 202) {
+                console.log('Spotify volume error:', xhr.status, error);
+            }
+        }
+    });
 }
 
 socket.on('volume', function(data){
     var $this = $('#volume-tab').empty();
     console.log('volume: ' + data);
     volume = data;
-    if (is_player) {
+
+    // Update volumeBeforeMute if not currently muted, so unmute uses latest value
+    if (!localMuted) {
+        volumeBeforeMute = data;
+    }
+
+    // Only apply volume to players if not locally muted
+    if (is_player && !localMuted) {
         spotify_volume(data);
         if (typeof sc_player !== 'undefined' && sc_player.set_volume) {
             sc_player.set_volume(data);
@@ -914,13 +935,41 @@ function sort_airhorns() {
     });
 }
 
-function mute_all(ev){
-    $('.volume-slider').each(function(){
-        var $this = $(this),
-            d = $this.data();
-        $this.val(0);
-        socket.emit('change_volume', 1);
-    });
+// Local mute state - only affects this user's playback
+var localMuted = false;
+var volumeBeforeMute = 100;
+
+function local_mute_toggle(ev) {
+    // Only allow mute toggle if user is synced as player
+    if (!is_player) {
+        console.log('Must sync Spotify first to use local mute');
+        return;
+    }
+
+    localMuted = !localMuted;
+    var $button = $('#local-mute');
+
+    if (localMuted) {
+        // Mute: save current volume (use typeof to preserve 0)
+        volumeBeforeMute = (typeof volume !== 'undefined' && volume !== null) ? volume : 100;
+        $button.text('unmute');
+        set_local_volume(0);
+    } else {
+        // Unmute: restore previous volume
+        $button.text('mute');
+        set_local_volume(volumeBeforeMute);
+    }
+}
+
+function set_local_volume(vol) {
+    // Control local playback only - does NOT broadcast to other users
+    spotify_volume(vol);
+    if (typeof sc_player !== 'undefined' && sc_player.set_volume) {
+        sc_player.set_volume(vol);
+    }
+    if (ytready) {
+        Y.setVolume(vol * yt_volume_adjust);
+    }
 }
 
 function volume_change(ev){
@@ -1491,7 +1540,7 @@ window.addEventListener('load', function(){
                             song_search_click);
     $('#podcast-search-results').on('click', '.search-result',
                             song_search_click);
-    $('#mute-all').on('click', mute_all);
+    $('#local-mute').on('click', local_mute_toggle);
     $('#do-nuke-queue').on('click', do_nuke_queue);
     $('#pause-button').on('click', pause_button);
     $('#do-airhorn').on('click', do_airhorn);
