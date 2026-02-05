@@ -593,8 +593,9 @@ function fix_player(src, id, pos, paused){
         last_synced_spotify_track = id;
         console.log("Syncing to Spotify track:", id, "at position:", pos);
         spotify_play(id, pos);
-        // Respect local mute state when setting volume
-        spotify_volume(localMuted ? 0 : volume);
+        // Respect local mute state and use local volume (volumeBeforeMute) instead of server volume
+        // This preserves the user's Spotify device volume rather than imposing the server's global volume
+        spotify_volume(localMuted ? 0 : volumeBeforeMute);
       }
     }
     if (src == 'soundcloud'){
@@ -604,8 +605,8 @@ function fix_player(src, id, pos, paused){
         $('#ytapiplayer').data('youtube_hidden', 'true');
         $('#ytapiplayer').css('z-index', '900');
         sc_player.play(id, pos);
-        // Respect local mute state when setting volume
-        sc_player.set_volume(localMuted ? 0 : volume);
+        // Respect local mute state and use local volume (volumeBeforeMute)
+        sc_player.set_volume(localMuted ? 0 : volumeBeforeMute);
       }
     } else if (src == 'youtube'){
         if (ytready) {
@@ -619,8 +620,8 @@ function fix_player(src, id, pos, paused){
                 $('#ytapiplayer').data('youtube_hidden', 'false');
                 $('#ytapiplayer').css('z-index', '1100');
                 Y.loadVideoById(id, pos);
-                // Respect local mute state when setting volume
-                Y.setVolume(localMuted ? 0 : (volume * yt_volume_adjust));
+                // Respect local mute state and use local volume (volumeBeforeMute)
+                Y.setVolume(localMuted ? 0 : (volumeBeforeMute * yt_volume_adjust));
             }
         }
     }
