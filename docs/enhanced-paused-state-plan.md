@@ -4,7 +4,7 @@
 
 When the player is paused, make it visually obvious to users by:
 1. Displaying "PAUSED" title with Bender quote in the now-playing text area
-2. Showing next song's album art with a pause icon overlay
+2. Showing current song's album art with a pause icon overlay
 3. Replacing Bender headshot in the person image area
 4. Swapping airhorn buttons with an "unpause everything" button
 
@@ -13,7 +13,7 @@ When the player is paused, make it visually obvious to users by:
 | Area | When Playing | When Paused |
 |------|--------------|-------------|
 | **Now-playing text** | Song title + Artist | "Bite my shiny metal pause button!" (Bender quote) |
-| **Album art** | Current song's album | Next song's album with pause icon overlay |
+| **Album art** | Current song's album | Current song's album with pause icon overlay |
 | **Person image** | User who queued song | `theechonestcom.png` (Bender headshot) |
 | **Airhorn buttons** | Visible | Hidden, replaced with "unpause everything" |
 | **Browser tab** | "Song - Artist \| Andre" | "PAUSED \| Andre" |

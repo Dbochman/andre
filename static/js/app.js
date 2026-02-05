@@ -427,10 +427,9 @@ var NowPlayingView = Backbone.View.extend({
                 '<div id="now-playing-jammers"></div>'
             );
 
-            // Show next song's album art with pause overlay
-            var nextSong = playlist.at(0);
-            if (nextSong && nextSong.get('img')) {
-                $('#now-playing-album').css('background-image', 'url(' + nextSong.get('img') + ')');
+            // Show current song's album art with pause overlay
+            if (this.model && this.model.get('big_img')) {
+                $('#now-playing-album').css('background-image', 'url(' + this.model.get('big_img') + ')');
             } else {
                 $('#now-playing-album').css('background-image', '');
             }
@@ -493,15 +492,6 @@ function update_playlist(data) {
 socket.on('playlist_update', function(data){
     console.log("playlist_update", data);
     update_playlist(data);
-    // If paused, update album art when playlist arrives/changes
-    if (playerpaused) {
-        if (data.length > 0 && data[0].img) {
-            $('#now-playing-album').css('background-image', 'url(' + data[0].img + ')');
-        } else {
-            // Clear stale album art if queue is empty or has no image
-            $('#now-playing-album').css('background-image', '');
-        }
-    }
 });
 
 function update_comments_for_song (songID, comments) {

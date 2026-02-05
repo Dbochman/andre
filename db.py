@@ -1010,9 +1010,6 @@ class DB(object):
 
     def kill_playing(self, email):
         self._r.set('MISC|force-jump', 1)
-        # If paused, send playlist_update so UI shows new next song
-        if self._r.get('MISC|paused'):
-            self._msg('playlist_update')
 
     def pause(self, email):
         self._r.set('MISC|paused', 1)
