@@ -164,6 +164,31 @@ cap_drop:
 - Andre: HTTP check on `/health` endpoint
 - Automatic container restart on failure
 
+### 12. Redis Authentication (High)
+
+**Risk**: Unauthorized access to Redis data if network misconfiguration occurs.
+
+**Implementation**:
+- Password authentication via `--requirepass` flag
+- Protected mode enabled via `--protected-mode yes`
+- Password stored in `.env` file (not in source control)
+- All Python Redis connections updated to use password
+
+```yaml
+# docker-compose.yaml
+command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD} --protected-mode yes
+```
+
+```python
+# db.py, app.py
+redis.StrictRedis(host=..., port=..., password=CONF.REDIS_PASSWORD, ...)
+```
+
+**Defense in Depth**: Even though Redis port 6379 is blocked by UFW firewall, authentication provides an additional security layer against:
+- Firewall misconfiguration
+- Internal network compromise
+- Container escape scenarios
+
 ---
 
 ## Verification Commands
@@ -210,6 +235,17 @@ ssh deploy@192.241.153.83 "docker exec andre_redis ping -c 1 8.8.8.8 2>&1"
 # 9. Verify health checks
 ssh deploy@192.241.153.83 "docker inspect andre_app --format='{{.State.Health.Status}}'"
 # Expected: healthy
+
+# 10. Verify Redis authentication
+ssh deploy@192.241.153.83 "docker exec andre_redis redis-cli PING 2>&1"
+# Expected: NOAUTH Authentication required
+
+ssh deploy@192.241.153.83 "docker exec andre_redis redis-cli -a \$REDIS_PASSWORD PING 2>&1"
+# Expected: PONG
+
+# 11. Verify Redis protected mode
+ssh deploy@192.241.153.83 "docker exec andre_redis redis-cli -a \$REDIS_PASSWORD CONFIG GET protected-mode"
+# Expected: protected-mode yes
 ```
 
 ---
@@ -287,3 +323,4 @@ docker compose up -d --build
 | 2026-02-04 | Added fail2ban with 365-day SSH ban |
 | 2026-02-04 | Disabled SSH root login and password auth |
 | 2026-02-04 | Verified automatic security updates enabled |
+| 2026-02-05 | Added Redis password authentication and protected mode (response to DigitalOcean security notice) |
