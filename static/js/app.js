@@ -662,11 +662,20 @@ socket.on('auth_token_update', function(data){
     console.log("got a token! assigning");
     auth_token = data['token'];
     clearTimeout(auth_token_clear);
-    auth_token_clear = setTimeout(function() { 
+    auth_token_clear = setTimeout(function() {
         auth_token = null;
         auth_token_clear = 0;
         socket.emit('fetch_auth_token');
     }, data['time_left']*1000);
+    // Resume Spotify playback now that we have a token (if we're the player)
+    if (is_player && auth_token) {
+        $.ajax('https://api.spotify.com/v1/me/player/play', {
+            method: 'PUT',
+            headers: {
+                Authorization: "Bearer " + auth_token
+            }
+        });
+    }
 });
 
 socket.on('auth_token_refresh', function(data){
