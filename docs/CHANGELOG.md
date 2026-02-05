@@ -49,6 +49,13 @@ All notable changes to Andre are documented in this file.
   - Falls back to last valid track or Billy Joel when only episodes are available
   - Commit: `93aa72b`
 
+- **Spotify Rate Limit Handling** - Added global rate limit tracking to stop hammering the API when rate limited
+  - `is_spotify_rate_limited()` checks if we're currently rate limited
+  - `handle_spotify_exception()` detects 429 errors and sets the rate limit expiry
+  - Bender, search endpoints, and search token all check before making API calls
+  - Rate limit automatically clears when the retry-after period expires
+  - Commits: `653cd5c`, `29d4a05`
+
 ### Features
 
 - **Local Mute** - Added local mute button that only affects the current user's playback
