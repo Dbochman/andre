@@ -1096,6 +1096,14 @@ function make_player(ev){
         console.log("fetching auth token");
         ignore_refresh = false;
         socket.emit('fetch_auth_token');
+    } else {
+        // Resume Spotify playback if we already have a token
+        $.ajax('https://api.spotify.com/v1/me/player/play', {
+            method: 'PUT',
+            headers: {
+                Authorization: "Bearer " + auth_token
+            }
+        });
     }
     socket.emit('request_volume');
 
@@ -1147,9 +1155,17 @@ function do_nuke_queue(){
     });
 }
 function do_airhorn(){
-    // Ensure player is active before airhorning
+    // Ensure player is active and Spotify is playing before airhorning
     if (!is_player) {
         make_player();
+    } else if (auth_token) {
+        // Already player, but resume Spotify in case it's paused
+        $.ajax('https://api.spotify.com/v1/me/player/play', {
+            method: 'PUT',
+            headers: {
+                Authorization: "Bearer " + auth_token
+            }
+        });
     }
     var msg = "Do you feel lucky punk?";
     if(is_hohoholiday()){
@@ -1161,9 +1177,17 @@ function do_airhorn(){
     });
 }
 function do_free_airhorn(){
-    // Ensure player is active before airhorning
+    // Ensure player is active and Spotify is playing before airhorning
     if (!is_player) {
         make_player();
+    } else if (auth_token) {
+        // Already player, but resume Spotify in case it's paused
+        $.ajax('https://api.spotify.com/v1/me/player/play', {
+            method: 'PUT',
+            headers: {
+                Authorization: "Bearer " + auth_token
+            }
+        });
     }
     confirm_dialog("Is this awesome airhorn worthy?", function(){
         socket.emit('free_airhorn');
