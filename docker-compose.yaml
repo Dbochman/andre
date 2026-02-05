@@ -16,6 +16,9 @@ services:
   redis:
     image: redis:7-alpine@sha256:02f2cc4882f8bf87c79a220ac958f58c700bdec0dfb9b9ea61b62fb0e8f1bfcf
     container_name: andre_redis
+    # Security: password auth, protected mode
+    # Note: ACL-based command restrictions require redis.conf file mount (see SECURITY.md)
+    # Current config uses requirepass for authentication
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-changeme} --protected-mode yes
     # Redis only on internal network - no internet access
     networks:

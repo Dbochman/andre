@@ -189,6 +189,29 @@ redis.StrictRedis(host=..., port=..., password=CONF.REDIS_PASSWORD, ...)
 - Internal network compromise
 - Container escape scenarios
 
+### 13. Redis Best Practices Checklist (Reference)
+
+Based on [Redis Security Documentation](https://redis.io/docs/latest/operate/oss_and_stack/management/security/) and [DigitalOcean Best Practices](https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-redis-on-ubuntu):
+
+| Practice | Status | Notes |
+|----------|--------|-------|
+| Bind to loopback/trusted network | ✓ | Docker internal network only |
+| Firewall protection | ✓ | UFW blocks port 6379 |
+| Password authentication | ✓ | `--requirepass` enabled |
+| Protected mode | ✓ | `--protected-mode yes` |
+| Run as non-root | ✓ | Redis Alpine image default |
+| Network isolation | ✓ | `andre_internal` network |
+| TLS encryption | N/A | Not needed for internal Docker network |
+| ACL-based command restrictions | Future | Would block FLUSHALL, CONFIG, etc. |
+| Disable default user | Future | Requires ACL file configuration |
+| Restrict key patterns | N/A | Single-tenant application |
+
+**Future Enhancements** (for higher-security deployments):
+- Use Redis ACLs to disable dangerous commands (`-@dangerous`)
+- Create dedicated application user with minimal permissions
+- Enable TLS for Redis connections (if spanning network boundaries)
+- Implement Redis Sentinel or Cluster for HA
+
 ---
 
 ## Verification Commands
@@ -312,6 +335,9 @@ docker compose up -d --build
 - [Docker Security Best Practices](https://docs.docker.com/develop/security-best-practices/)
 - [Fail2ban Documentation](https://www.fail2ban.org/wiki/index.php/Main_Page)
 - [Ubuntu Server Security Guide](https://ubuntu.com/server/docs/security-introduction)
+- [Redis Security Documentation](https://redis.io/docs/latest/operate/oss_and_stack/management/security/)
+- [Redis ACL Documentation](https://redis.io/docs/latest/operate/oss_and_stack/management/security/acl/)
+- [DigitalOcean: How to Install and Secure Redis](https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-redis-on-ubuntu)
 
 ---
 
@@ -324,3 +350,4 @@ docker compose up -d --build
 | 2026-02-04 | Disabled SSH root login and password auth |
 | 2026-02-04 | Verified automatic security updates enabled |
 | 2026-02-05 | Added Redis password authentication and protected mode (response to DigitalOcean security notice) |
+| 2026-02-05 | Documented Redis security best practices checklist with references |
