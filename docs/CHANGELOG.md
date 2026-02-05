@@ -35,6 +35,10 @@ All notable changes to Andre are documented in this file.
 - **Form Accessibility Fix** - Added missing `id` and `name` attributes to search input fields
   - Fixed 3 form fields in `main.html` that triggered browser accessibility warnings
 
+- **Queue Profile Image Clipping** - Fixed profile images being clipped in queue items
+  - Changed person-image from 43x65px to 65x65px square to match Gravatar aspect ratio
+  - Adjusted controls and jammers positioning to accommodate wider images
+
 ### Security
 
 - **Redis Authentication** - Added password authentication and protected mode in response to DigitalOcean security notice

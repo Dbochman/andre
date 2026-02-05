@@ -161,10 +161,10 @@ float:left; width:30px; height:30px;
 }
 .queue-item-text {padding-left:10px;display:inline-block;height:65px;text-overflow:hidden;overflow:hidden;float:left;}
 .queue-item .album-image {height:61px;width:61px;margin:2px;background:url(http://placekitten.com/65/65);background-size:cover;display:inline-block;float:left;}
-.queue-item .person-image {height:65px;width:43px;background:url(http://placekitten.com/43/65);position:absolute;right:0;background-size:cover;display:inline-block;}
+.queue-item .person-image {height:65px;width:65px;background:url(http://placekitten.com/65/65);position:absolute;right:0;background-size:cover;display:inline-block;}
 .playlist-src-item {color: #F0F0F0;}
 .playlist-src-item .album-image {background-size: contain;background-position:center;background-repeat:no-repeat;}
-.controls {height:65px; display:inline-block; width:88px;position:absolute;right:43px;
+.controls {height:65px; display:inline-block; width:88px;position:absolute;right:65px;
   background:rgba(0,0,0,0.3);
 }
 
@@ -258,7 +258,7 @@ float:left; width:30px; height:30px;
 .jammer {float:right; width:20px; height:20px; border-radius:2px;
         background-position: center center;
         background-size:cover;margin-right:2px; background-repeat:no-repeat;}
-.jammers {z-index:9999;right:134px;margin-top:8px;position:absolute;}
+.jammers {z-index:9999;right:156px;margin-top:8px;position:absolute;}
 
 #confirm {width:80%; position:fixed; top: 200px; background: rgb(31, 31, 31);
             color: #F0F0F0; z-index:99999;margin:0 9%; text-align:center;
