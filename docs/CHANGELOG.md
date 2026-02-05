@@ -57,6 +57,10 @@ All notable changes to Andre are documented in this file.
   - Airhorns now use local volume (`volumeBeforeMute`) instead of server volume
   - Fixes issue where airhorns were nearly silent when server volume was set low
 
+- **Search Token Refresh Loop Fix** - Fixed infinite loop when Spotify is rate limited
+  - When rate limited, server returns `time_left=0` which caused client to immediately re-request token
+  - Now only schedules token refresh when `time_left > 0`
+
 - **Bender Empty Queue During Podcasts** - Fixed Bender not generating song recommendations while a podcast episode is playing
   - Added `is_valid_track_seed()` helper to skip episode URIs when selecting seeds
   - Falls back to last valid track or Billy Joel when only episodes are available

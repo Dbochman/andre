@@ -677,14 +677,17 @@ function resume_spotify_if_needed() {
 search_token = null;
 search_token_clear = 0;
 socket.on('search_token_update', function(data){
-    console.log("got a search token! assigning");
     search_token = data['token'];
     clearTimeout(search_token_clear);
-    search_token_clear = setTimeout(function() { 
-        search_token = null;
-        search_token_clear = 0;
-        socket.emit('fetch_search_token');
-    }, data['time_left']*1000 + 5);
+    // Only schedule refresh if we got a valid token with time_left > 0
+    // This prevents infinite loop when rate limited (time_left=0)
+    if (data['time_left'] > 0) {
+        search_token_clear = setTimeout(function() {
+            search_token = null;
+            search_token_clear = 0;
+            socket.emit('fetch_search_token');
+        }, data['time_left']*1000 + 5);
+    }
 });
 
 var auth_token_clear = 0;
