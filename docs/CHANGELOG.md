@@ -39,6 +39,11 @@ All notable changes to Andre are documented in this file.
   - Changed person-image from 43x65px to 65x65px square to match Gravatar aspect ratio
   - Adjusted controls and jammers positioning to accommodate wider images
 
+- **Volume Override on Sync** - Fixed issue where syncing Spotify would set volume to 1 instead of user's local volume
+  - Changed `fix_player()` to use `volumeBeforeMute` (user's local Spotify device volume) instead of server's global `volume`
+  - Applies to Spotify, SoundCloud, and YouTube players
+  - Commit: `f46c4bf`
+
 ### Features
 
 - **Local Mute** - Added local mute button that only affects the current user's playback
