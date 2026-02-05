@@ -270,3 +270,44 @@ background-position: center center;
 #do-free-airhorn.disabled {display:none;}
 #make-player.disabled {display:none;}
 #connect.disabled {display:none;}
+
+/* Paused state - album art overlay */
+/* Note: #now-playing-album already has position:absolute, keep it */
+
+#now-playing-album.paused::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 1001;
+}
+
+#now-playing-album.paused::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100px;
+    height: 100px;
+    background-color: rgba(0, 0, 0, 0.8);
+    border-radius: 50%;
+    z-index: 1002;
+    /* Pause icon bars using gradient */
+    background-image: linear-gradient(to right,
+        transparent 25%,
+        #fff 25%,
+        #fff 40%,
+        transparent 40%,
+        transparent 60%,
+        #fff 60%,
+        #fff 75%,
+        transparent 75%
+    );
+    background-size: 50% 50%;
+    background-position: center;
+    background-repeat: no-repeat;
+}

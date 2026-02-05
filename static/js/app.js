@@ -415,12 +415,39 @@ var NowPlayingView = Backbone.View.extend({
         window.open(id);
     },
     render: function(){
+        // Handle paused state
+        if (playerpaused) {
+            // Render paused content (intentionally omits #playing-buttons and comment button)
+            this.$el.html(
+                '<div id="now-playing-person" style="background-image:url(/static/theechonestcom.png);"></div>' +
+                '<div id="now-playing-text">' +
+                    '<h1>PAUSED</h1>' +
+                    '<h2>"Bite my shiny metal pause button!"</h2>' +
+                '</div>' +
+                '<div id="now-playing-jammers"></div>'
+            );
+
+            // Show current song's album art with pause overlay
+            if (this.model && this.model.get('big_img')) {
+                $('#now-playing-album').css('background-image', 'url(' + this.model.get('big_img') + ')');
+            } else {
+                $('#now-playing-album').css('background-image', '');
+            }
+
+            $('#now-playing-album').addClass('paused');
+            this.$el.removeClass("autoplay");
+            _window_resize();
+            return this.$el;
+        }
+
+        // Normal render when not paused
         if(!this.model || !this.model.get("title")){
             return;
         }
         this.$el.html(TEMPLATES.now_playing(this.model.toJSON()));
         $('#now-playing-album').css('background-image',
                                     'url('+this.model.get("big_img")+')')
+        $('#now-playing-album').removeClass('paused');
         this.$el.css({'background-color':
                         '#'+this.model.get("background_color"),
                         'color':'#'+this.model.get('foreground_color')});
@@ -617,6 +644,24 @@ function spotify_play(id, pos, retries=5) {
     });
 }
 
+// Helper to resume Spotify playback with guards
+function resume_spotify_if_needed() {
+    // Only resume if: we have a token, we're the player, not paused, and source is Spotify
+    if (!auth_token || !is_player || playerpaused) {
+        return;
+    }
+    var src = now_playing.get('src');
+    if (src !== 'spotify') {
+        return;
+    }
+    $.ajax('https://api.spotify.com/v1/me/player/play', {
+        method: 'PUT',
+        headers: {
+            Authorization: "Bearer " + auth_token
+        }
+    });
+}
+
 search_token = null;
 search_token_clear = 0;
 socket.on('search_token_update', function(data){
@@ -635,11 +680,13 @@ socket.on('auth_token_update', function(data){
     console.log("got a token! assigning");
     auth_token = data['token'];
     clearTimeout(auth_token_clear);
-    auth_token_clear = setTimeout(function() { 
+    auth_token_clear = setTimeout(function() {
         auth_token = null;
         auth_token_clear = 0;
         socket.emit('fetch_auth_token');
     }, data['time_left']*1000);
+    // Resume Spotify playback now that we have a token
+    resume_spotify_if_needed();
 });
 
 socket.on('auth_token_refresh', function(data){
@@ -649,26 +696,50 @@ socket.on('auth_token_refresh', function(data){
 
 socket.on('now_playing_update', function(data){
     playerpaused = data.paused;
+
+    // Update button states
     if (playerpaused) {
         $('#pause-button').text('unpause everything');
+        $('#airhorn-unpause-btn').show();
+        document.title = "PAUSED | Andre";
     } else {
         $('#pause-button').text('pause everything');
+        $('#airhorn-unpause-btn').hide();
     }
-    if(!data.title){
-        return;
+
+    // Always keep now_playing model in sync - this triggers view re-render
+    if (data.title) {
+        console.log(data);
+        now_playing.clear({silent:true});
+        now_playing.set(data);
+        if (!playerpaused) {
+            document.title = data.title + " - " + data.artist + " | Andre";
+        }
+    } else if (playerpaused) {
+        // Paused with no title data - trigger render anyway
+        now_playing.trigger('change');
+    } else {
+        // Unpause without title - restore from model if available
+        var title = now_playing.get('title');
+        var artist = now_playing.get('artist');
+        if (title && artist) {
+            document.title = title + " - " + artist + " | Andre";
+        }
     }
-    console.log(data);
-    now_playing.clear({silent:true});
-    now_playing.set(data);
-    document.title = data.title+" - "+data.artist+" | Andre"
-    if(window.webkitNotifications 
-            && window.webkitNotifications.checkPermission() == 0
-            && SHOW_NOTIFICATIONS){
-        var note = window.webkitNotifications.createNotification(data.img,
-                                            data.title, data.artist);
-            note.show();
-            setTimeout(function(){note.close();}, 7000);
+
+    // Notifications (only when playing)
+    if (!playerpaused && data.title) {
+        if(window.webkitNotifications
+                && window.webkitNotifications.checkPermission() == 0
+                && SHOW_NOTIFICATIONS){
+            var note = window.webkitNotifications.createNotification(data.img,
+                                                data.title, data.artist);
+                note.show();
+                setTimeout(function(){note.close();}, 7000);
+        }
     }
+
+    // Player sync logic
     if(is_player){
         fix_player(now_playing.get('src'), now_playing.get('trackid'), data.pos, playerpaused);
     }
@@ -1045,6 +1116,9 @@ function make_player(ev){
         console.log("fetching auth token");
         ignore_refresh = false;
         socket.emit('fetch_auth_token');
+    } else {
+        // Resume Spotify playback if we already have a token
+        resume_spotify_if_needed();
     }
     socket.emit('request_volume');
 
@@ -1096,6 +1170,12 @@ function do_nuke_queue(){
     });
 }
 function do_airhorn(){
+    // Ensure player is active and Spotify is playing before airhorning
+    if (!is_player) {
+        make_player();
+    } else {
+        resume_spotify_if_needed();
+    }
     var msg = "Do you feel lucky punk?";
     if(is_hohoholiday()){
         msg="Are you Santa?";
@@ -1106,6 +1186,12 @@ function do_airhorn(){
     });
 }
 function do_free_airhorn(){
+    // Ensure player is active and Spotify is playing before airhorning
+    if (!is_player) {
+        make_player();
+    } else {
+        resume_spotify_if_needed();
+    }
     confirm_dialog("Is this awesome airhorn worthy?", function(){
         socket.emit('free_airhorn');
     });
@@ -1331,6 +1417,11 @@ window.addEventListener('load', function(){
     $('#pause-button').on('click', pause_button);
     $('#do-airhorn').on('click', do_airhorn);
     $('#do-free-airhorn').on('click', do_free_airhorn);
+    $('#airhorn-unpause-btn').on('click', function(){
+        console.log("unpause button (from airhorn area)");
+        socket.emit("unpause");
+        // Spotify playback resumes via fix_player when now_playing_update arrives
+    });
     $('#kill-playing').on('click', kill_playing);
     $('#feel-shame').on('click', feel_shame);
     $('#show-notifications').on('click', show_notifications);
