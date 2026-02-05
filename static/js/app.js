@@ -494,8 +494,13 @@ socket.on('playlist_update', function(data){
     console.log("playlist_update", data);
     update_playlist(data);
     // If paused, update album art when playlist arrives/changes
-    if (playerpaused && data.length > 0 && data[0].img) {
-        $('#now-playing-album').css('background-image', 'url(' + data[0].img + ')');
+    if (playerpaused) {
+        if (data.length > 0 && data[0].img) {
+            $('#now-playing-album').css('background-image', 'url(' + data[0].img + ')');
+        } else {
+            // Clear stale album art if queue is empty or has no image
+            $('#now-playing-album').css('background-image', '');
+        }
     }
 });
 
