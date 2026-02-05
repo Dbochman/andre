@@ -663,12 +663,14 @@ function resume_spotify_if_needed() {
     if (src !== 'spotify') {
         return;
     }
-    $.ajax('https://api.spotify.com/v1/me/player/play', {
-        method: 'PUT',
-        headers: {
-            Authorization: "Bearer " + auth_token
-        }
-    });
+    var trackid = now_playing.get('trackid');
+    var pos = now_playing.get('pos') || 0;
+
+    // Use spotify_play which handles errors and includes the track URI
+    // This works even if no device was previously active
+    if (trackid) {
+        spotify_play(trackid, pos);
+    }
 }
 
 search_token = null;
