@@ -44,6 +44,11 @@ All notable changes to Andre are documented in this file.
   - Applies to Spotify, SoundCloud, and YouTube players
   - Commit: `f46c4bf`
 
+- **Bender Empty Queue During Podcasts** - Fixed Bender not generating song recommendations while a podcast episode is playing
+  - Added `is_valid_track_seed()` helper to skip episode URIs when selecting seeds
+  - Falls back to last valid track or Billy Joel when only episodes are available
+  - Commit: `93aa72b`
+
 ### Features
 
 - **Local Mute** - Added local mute button that only affects the current user's playback
