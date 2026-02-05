@@ -22,7 +22,7 @@ from flask import Flask, request, render_template, session, redirect, jsonify, m
 from flask_assets import Environment, Bundle
 
 from config import CONF
-from db import DB
+from db import DB, is_spotify_rate_limited, set_spotify_rate_limit
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -263,6 +263,11 @@ class MusicNamespace(WebSocketManager):
 
     def on_fetch_search_token(self):
         logger.debug("fetch search token")
+        # Check rate limit before providing token (prevents frontend from hammering API)
+        if is_spotify_rate_limited():
+            logger.debug("Spotify rate limited - not providing search token")
+            self.emit('search_token_update', dict(token=None, error="rate_limited", time_left=0))
+            return
         token_info = auth.get_access_token()
         # Handle get_access_token returning dict in newer spotipy versions
         if isinstance(token_info, dict):
@@ -715,12 +720,30 @@ def user_jam_history_api(userid):
 @app.route('/search/v2', methods=['GET'])
 def search_spotify():
     q = request.values['q']
+
+    # Check if we're rate limited before making API call
+    if is_spotify_rate_limited():
+        resp = jsonify({"error": "Spotify rate limited. Please try again later."})
+        resp.status_code = 429
+        return resp
+
     # Handle get_access_token returning dict in newer spotipy versions
     token = auth.get_access_token()
     if isinstance(token, dict):
         token = token.get('access_token', token)
     sp = spotipy.Spotify(auth=token)
-    search_result = sp.search(q, 25)
+
+    try:
+        search_result = sp.search(q, 25)
+    except spotipy.exceptions.SpotifyException as e:
+        if e.http_status == 429:
+            # Extract retry-after from error and set rate limit
+            retry_after = int(e.headers.get('Retry-After', 3600)) if hasattr(e, 'headers') and e.headers else 3600
+            set_spotify_rate_limit(retry_after)
+            resp = jsonify({"error": "Spotify rate limited. Please try again later."})
+            resp.status_code = 429
+            return resp
+        raise
 
     parsed_result = []
     items = search_result.get('tracks', {}).get('items')

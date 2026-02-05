@@ -53,6 +53,26 @@ spotify_client = spotipy.client.Spotify(client_credentials_manager=server_tokens
 auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
 auth.get_access_token()
 
+# Global rate limit tracker - stops hammering Spotify when rate limited
+_spotify_rate_limit_until = None
+
+def is_spotify_rate_limited():
+    """Check if we're currently rate limited by Spotify."""
+    global _spotify_rate_limit_until
+    if _spotify_rate_limit_until is None:
+        return False
+    if datetime.datetime.now() >= _spotify_rate_limit_until:
+        _spotify_rate_limit_until = None
+        logger.info("Spotify rate limit expired, resuming API calls")
+        return False
+    return True
+
+def set_spotify_rate_limit(retry_after_seconds):
+    """Set the rate limit expiry time."""
+    global _spotify_rate_limit_until
+    _spotify_rate_limit_until = datetime.datetime.now() + datetime.timedelta(seconds=retry_after_seconds)
+    logger.warning("Spotify rate limited until %s (%d seconds)", _spotify_rate_limit_until, retry_after_seconds)
+
 
 def _now():
     return datetime.datetime.now()
@@ -127,10 +147,17 @@ class DB(object):
         This approach uses still-working endpoints:
         1. Gets the seed from last-queued, last Bender track, or now-playing
         2. Fetches top tracks from the seed artist(s)
+
+        Returns empty list if Spotify is rate limited to avoid hammering the API.
         3. Gets other tracks from the same album
         4. Searches for artist name to find more variety
         5. Loops continuously with the last track as new seed
         """
+        # Check rate limit before making any API calls
+        if is_spotify_rate_limited():
+            logger.debug("Bender skipping - Spotify rate limited")
+            return []
+
         # Try multiple seed sources for continuity
         # NOTE: Episodes (podcasts) cannot be used as seeds - Bender only works with tracks
         seed_song = None
