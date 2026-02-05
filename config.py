@@ -28,7 +28,7 @@ def get_config_filenames():
 # Environment variable overrides (these take precedence over yaml files)
 # Note: HOSTNAME is intentionally excluded since Docker sets it to the container ID
 ENV_OVERRIDES = [
-    'REDIS_HOST', 'REDIS_PORT', 'DEBUG', 'SECRET_KEY',
+    'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'DEBUG', 'SECRET_KEY',
     'SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET',
     'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
     'DEV_AUTH_EMAIL', 'YT_API_KEY', 'SOUNDCLOUD_CLIENT_ID',

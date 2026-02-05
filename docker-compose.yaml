@@ -16,7 +16,7 @@ services:
   redis:
     image: redis:7-alpine@sha256:02f2cc4882f8bf87c79a220ac958f58c700bdec0dfb9b9ea61b62fb0e8f1bfcf
     container_name: andre_redis
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-changeme} --protected-mode yes
     # Redis only on internal network - no internet access
     networks:
       - andre_internal
@@ -45,7 +45,7 @@ services:
         reservations:
           memory: 128M
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 3
@@ -75,6 +75,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-changeme}
     volumes:
       - ./local_config.yaml:/app/local_config.yaml:ro
       - ./play_logs:/app/play_logs
@@ -127,6 +128,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-changeme}
     volumes:
       - ./local_config.yaml:/app/local_config.yaml:ro
       - ./play_logs:/app/play_logs

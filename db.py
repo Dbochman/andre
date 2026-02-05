@@ -99,7 +99,8 @@ class DB(object):
         logger.info('Creating DB object')
         redis_host = CONF.REDIS_HOST or 'localhost'
         redis_port = CONF.REDIS_PORT or 6379
-        self._r = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
+        redis_password = CONF.REDIS_PASSWORD or None
+        self._r = redis.StrictRedis(host=redis_host, port=redis_port, password=redis_password, decode_responses=True)
         self._h = PlayHistory(self)
         if init_history_to_redis:
             self._h.init_history()

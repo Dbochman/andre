@@ -199,7 +199,7 @@ class MusicNamespace(WebSocketManager):
         self.log('New namespace for {0}'.format(self.email))
 
     def listener(self):
-        r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379, decode_responses=True).pubsub()
+        r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379, password=CONF.REDIS_PASSWORD or None, decode_responses=True).pubsub()
         r.subscribe('MISC|update-pubsub')
         for m in r.listen():
             if m['type'] != 'message':
@@ -374,7 +374,7 @@ class VolumeNamespace(WebSocketManager):
         self.emit('volume', str(d.set_volume(vol)))
 
     def listener(self):
-        r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379, decode_responses=True).pubsub()
+        r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379, password=CONF.REDIS_PASSWORD or None, decode_responses=True).pubsub()
         r.subscribe('MISC|update-pubsub')
         for m in r.listen():
             if m['type'] != 'message':
