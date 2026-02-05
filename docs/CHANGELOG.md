@@ -49,6 +49,13 @@ All notable changes to Andre are documented in this file.
   - Falls back to last valid track or Billy Joel when only episodes are available
   - Commit: `93aa72b`
 
+- **YouTube URL Lookup Restored** - Fixed YouTube video adding with backend proxy and expanded URL support
+  - Created `/youtube/lookup` backend endpoint to hide API key from frontend
+  - Added support for `youtu.be` short URLs and `m.youtube.com` mobile URLs
+  - Added proper error handling to `add_youtube_song()` with logging
+  - Removed debug print statement that was logging to console
+  - Commit: `932285c`
+
 - **Spotify Rate Limit Handling** - Added global rate limit tracking to stop hammering the API when rate limited
   - `is_spotify_rate_limited()` checks if we're currently rate limited
   - `handle_spotify_exception()` detects 429 errors and sets the rate limit expiry
