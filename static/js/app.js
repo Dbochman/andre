@@ -1147,6 +1147,10 @@ function do_nuke_queue(){
     });
 }
 function do_airhorn(){
+    // Ensure player is active before airhorning
+    if (!is_player) {
+        make_player();
+    }
     var msg = "Do you feel lucky punk?";
     if(is_hohoholiday()){
         msg="Are you Santa?";
@@ -1157,6 +1161,10 @@ function do_airhorn(){
     });
 }
 function do_free_airhorn(){
+    // Ensure player is active before airhorning
+    if (!is_player) {
+        make_player();
+    }
     confirm_dialog("Is this awesome airhorn worthy?", function(){
         socket.emit('free_airhorn');
     });
