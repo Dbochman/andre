@@ -28,6 +28,25 @@ All notable changes to Andre are documented in this file.
   - Removed free airhorn button (UI declutter)
   - Commit: `c6df2a7`
 
+### Cleanup
+
+- **Airhorn Code Simplification** - Removed redundant logic from airhorn flow
+  - Removed `make_player()`/`resume_spotify_if_needed()` calls (audio sync is now a prerequisite)
+  - Removed dead `do_free_airhorn()` function and event binding (button already removed from HTML)
+  - Removed dead `free_horns` socket handler
+  - Confirmation dialog and airhorn picker dropdown preserved
+  - **Files Changed**: `static/js/app.js`
+
+- **Hide Shame Mixed Content Fix** - Replaced broken external placeholder image sites with inline SVG
+  - 4 of 6 placeholder sites (lorempixel, fillmurray, placecage, placekitten) are now dead
+  - Switched to self-contained SVG data URIs with random colored blocks
+  - Eliminates mixed content warnings and broken images
+  - **Files Changed**: `static/js/app.js`
+
+- **Pause Button Guard** - Only pause Spotify when a Spotify track is playing
+  - Prevents 403 errors from Spotify API when pausing during YouTube/SoundCloud playback
+  - **Files Changed**: `static/js/app.js`
+
 ### Bug Fixes
 
 - **YouTube Duration Parsing** - Fixed ISO 8601 duration parsing (PT1H9M9S, PT5M30S, etc.)

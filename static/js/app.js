@@ -947,14 +947,6 @@ socket.on('airhorns', function(data){
     $('#airhorn-history').html(TEMPLATES.horns({horns:data}));
 });
 
-socket.on('free_horns', function(data){
-    if(data > 0){
-        $('#do-free-airhorn').removeClass('disabled').html('free airhorn ('+data+')');
-    }else{
-        $('#do-free-airhorn').addClass('disabled');
-    }
-    console.log('free_horns', data);
-});
 
 function sort_airhorns() {
     if (airhorns.length == 0) {
@@ -1516,30 +1508,9 @@ function do_nuke_queue(){
     });
 }
 function do_airhorn(){
-    // Ensure player is active and Spotify is playing before airhorning
-    if (!is_player) {
-        make_player();
-    } else {
-        resume_spotify_if_needed();
-    }
-    var msg = "Do you feel lucky punk?";
-    if(is_hohoholiday()){
-        msg="Are you Santa?";
-    }
+    var msg = is_hohoholiday() ? "Are you Santa?" : "Do you feel lucky punk?";
     confirm_airhorn(msg, function(airhorn_choice){
-        console.log()
         socket.emit("airhorn", airhorn_choice);
-    });
-}
-function do_free_airhorn(){
-    // Ensure player is active and Spotify is playing before airhorning
-    if (!is_player) {
-        make_player();
-    } else {
-        resume_spotify_if_needed();
-    }
-    confirm_dialog("Is this awesome airhorn worthy?", function(){
-        socket.emit('free_airhorn');
     });
 }
 function kill_playing(){
@@ -1605,12 +1576,10 @@ function feel_shame(ev){
     $('#feel-shame').text(FEEL_SHAME?'show shame':'hide shame');
 }
 
-var fill_sites = ['lorempixel.com', 'fillmurray.com',
-                    'placecage.com', 'placebear.com', 'placekitten.com',
-                    'baconmockup.com',]
+var shame_colors = ['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#34495e'];
 function shame_image(width,height){
-    return 'http://'+fill_sites[Math.floor(Math.random()*fill_sites.length)]
-                    +'/'+width+'/'+height;
+    var color = shame_colors[Math.floor(Math.random()*shame_colors.length)].replace('#','');
+    return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='"+width+"' height='"+height+"'%3E%3Crect width='100%25' height='100%25' fill='%23"+color+"'/%3E%3C/svg%3E";
 }
 
 function show_notifications(){
@@ -1782,7 +1751,6 @@ window.addEventListener('load', function(){
     $('#do-nuke-queue').on('click', do_nuke_queue);
     $('#pause-button').on('click', pause_button);
     $('#do-airhorn').on('click', do_airhorn);
-    $('#do-free-airhorn').on('click', do_free_airhorn);
     $('#airhorn-unpause-btn').on('click', function(){
         console.log("unpause button (from airhorn area)");
         socket.emit("unpause");
