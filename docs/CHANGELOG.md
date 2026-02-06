@@ -8,6 +8,13 @@ All notable changes to Andre are documented in this file.
 
 ### Features
 
+- **Sync Audio Button** - Improved UX for audio sync
+  - Added prominent "sync audio" button at top of Airhorn tab
+  - Airhorn button now hidden until user syncs audio (encourages connection)
+  - Button disappears after sync, airhorn button appears
+  - Removed free airhorn button (UI declutter)
+  - Commit: `c6df2a7`
+
 - **SoundCloud OAuth Integration** - Fully reactivated SoundCloud support with server-side OAuth
   - SoundCloud deprecated simple client_id API authentication; now requires OAuth tokens
   - Implemented `client_credentials` OAuth flow (server-side only, no user popup required)
