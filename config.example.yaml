@@ -17,8 +17,10 @@ ALLOWED_EMAIL_DOMAINS:
 # YouTube API Key (optional, for YouTube support)
 YT_API_KEY: "your-youtube-api-key"
 
-# SoundCloud Client ID (optional, for SoundCloud support)
+# SoundCloud (optional, for SoundCloud support)
+# Client credentials from https://soundcloud.com/you/apps
 SOUNDCLOUD_CLIENT_ID: "your-soundcloud-client-id"
+SOUNDCLOUD_CLIENT_SECRET: "your-soundcloud-client-secret"
 
 # Debug mode
 DEBUG: true

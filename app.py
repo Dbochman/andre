@@ -132,6 +132,42 @@ logger.setLevel(logging.DEBUG)
 auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
 auth.get_access_token()
 
+# SoundCloud OAuth token cache (shared across all users)
+_soundcloud_token = None
+_soundcloud_token_expires = 0
+
+def get_soundcloud_token():
+    """Get a valid SoundCloud OAuth token using client_credentials flow."""
+    global _soundcloud_token, _soundcloud_token_expires
+
+    # Return cached token if still valid (with 60s buffer)
+    if _soundcloud_token and time.time() < _soundcloud_token_expires - 60:
+        return _soundcloud_token
+
+    # Fetch new token
+    if not CONF.SOUNDCLOUD_CLIENT_ID or not CONF.SOUNDCLOUD_CLIENT_SECRET:
+        logger.warning("SoundCloud not configured: missing client_id or client_secret")
+        return None
+
+    try:
+        resp = requests.post('https://api.soundcloud.com/oauth2/token',
+            data={
+                'grant_type': 'client_credentials',
+                'client_id': CONF.SOUNDCLOUD_CLIENT_ID,
+                'client_secret': CONF.SOUNDCLOUD_CLIENT_SECRET,
+            },
+            timeout=10
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        _soundcloud_token = data['access_token']
+        _soundcloud_token_expires = time.time() + data.get('expires_in', 3600)
+        logger.info("Fetched new SoundCloud OAuth token (expires in %ds)", data.get('expires_in', 3600))
+        return _soundcloud_token
+    except Exception as e:
+        logger.error("Failed to get SoundCloud token: %s", e)
+        return None
+
 #keeping a list of airhorns for mobile client
 airhorns = set()
 
@@ -402,6 +438,100 @@ class MusicNamespace(WebSocketManager):
 
     def on_loaded_airhorn(self, name):
         airhorns.add(name.encode('ascii','ignore'))
+
+    def on_resolve_soundcloud(self, url):
+        """Resolve a SoundCloud URL to track metadata."""
+        token = get_soundcloud_token()
+        if not token:
+            self.emit('soundcloud_error', {'error': 'SoundCloud not configured'})
+            return
+
+        try:
+            # Resolve URL to track
+            resp = requests.get(
+                'https://api.soundcloud.com/resolve',
+                params={'url': url},
+                headers={'Authorization': f'OAuth {token}'},
+                allow_redirects=True,
+                timeout=10
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            # Handle different object types (track, playlist, etc.)
+            if data.get('kind') != 'track':
+                self.emit('soundcloud_error', {'error': 'Only tracks are supported'})
+                return
+
+            # Extract relevant fields
+            track_data = {
+                'id': data.get('id'),
+                'title': data.get('title'),
+                'artist': data.get('user', {}).get('username'),
+                'duration': data.get('duration', 0) // 1000,  # Convert ms to seconds
+                'artwork_url': data.get('artwork_url'),
+                'permalink_url': data.get('permalink_url'),
+                'streamable': data.get('streamable', False),
+            }
+            self.emit('soundcloud_resolved', track_data)
+        except requests.exceptions.HTTPError as e:
+            logger.warning("SoundCloud resolve HTTP error: %s", e)
+            self.emit('soundcloud_error', {'error': 'Track not found or unavailable'})
+        except Exception as e:
+            logger.error("SoundCloud resolve error: %s", e)
+            self.emit('soundcloud_error', {'error': 'Failed to resolve track'})
+
+    def on_get_soundcloud_stream(self, track_id):
+        """Get stream URL for a SoundCloud track."""
+        token = get_soundcloud_token()
+        if not token:
+            self.emit('soundcloud_stream_error', {'error': 'SoundCloud not configured', 'track_id': track_id})
+            return
+
+        try:
+            # Get track streams
+            resp = requests.get(
+                f'https://api.soundcloud.com/tracks/{track_id}/streams',
+                headers={'Authorization': f'OAuth {token}'},
+                timeout=10
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+            # Prefer http_mp3_128_url for broad compatibility
+            stream_url = data.get('http_mp3_128_url') or data.get('hls_mp3_128_url')
+            if not stream_url:
+                logger.warning("No stream URL found for SoundCloud track %s", track_id)
+                self.emit('soundcloud_stream_error', {'error': 'No stream available', 'track_id': track_id})
+                return
+
+            # The stream URL requires OAuth and redirects to a signed CDN URL
+            # Follow the redirect to get the direct playable URL
+            stream_resp = requests.get(
+                stream_url,
+                headers={'Authorization': f'OAuth {token}'},
+                allow_redirects=False,
+                timeout=10
+            )
+
+            if stream_resp.status_code in (301, 302, 303, 307, 308):
+                # Get the redirect location - this is the direct CDN URL
+                direct_url = stream_resp.headers.get('Location')
+                if direct_url:
+                    logger.debug("SoundCloud stream redirect for track %s: %s", track_id, direct_url[:100])
+                    self.emit('soundcloud_stream', {'track_id': track_id, 'stream_url': direct_url})
+                    return
+
+            # If no redirect, try using the original URL (shouldn't happen)
+            logger.warning("SoundCloud stream no redirect for track %s, using original URL", track_id)
+            self.emit('soundcloud_stream', {'track_id': track_id, 'stream_url': stream_url})
+
+        except requests.exceptions.HTTPError as e:
+            logger.warning("SoundCloud stream HTTP error for track %s: %s", track_id, e)
+            self.emit('soundcloud_stream_error', {'error': 'Stream not available', 'track_id': track_id})
+        except Exception as e:
+            logger.error("SoundCloud stream error for track %s: %s", track_id, e)
+            self.emit('soundcloud_stream_error', {'error': 'Failed to get stream URL', 'track_id': track_id})
 
 class VolumeNamespace(WebSocketManager):
     def log(self, msg, debug=True):

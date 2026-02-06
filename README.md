@@ -152,6 +152,9 @@ After Spotify acquired The Echo Nest in 2014, Prosecco was forked and rebranded 
 
 This repository represents the Andre branch, which was resurrected from a 2018 snapshot and modernized to Python 3 in 2024-2026. The historical play logs from 2017-2018 power the "Throwback" feature, which suggests songs that were played on the same day of the week years ago.
 
+## Changelog
+See `docs/CHANGELOG.md` for the resurrection change summary and testing notes.
+
 ## License
 
 MIT

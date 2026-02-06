@@ -1,45 +1,65 @@
 var sc_player = window.sc_player || {};
-SC.initialize({
-      client_id: '8267fd360bf3864e78a43456a6b26d74'
-});
 
 sc_player.playing_track_id = -1;
-sc_player.stream = null;
+sc_player.audio = null;
+
 sc_player.playing = function() {
     return sc_player.playing_track_id != -1;
-}
+};
+
 sc_player.play = function(track_id, pos) {
     if (sc_player.playing()) {
         sc_player.stop();
     }
     sc_player.playing_track_id = track_id;
-    console.log("/tracks/"+track_id);
-    sc_player.stream = SC.stream("/tracks/"+track_id).then(function(sound){
-        sound.options.protocols = ['http']
-        sc_player.stream = sound;
-        sound.play();
-        sound.on("play-start", function() {
-          sound.seek(pos*1000);
-        })
+    console.log("Requesting stream for SoundCloud track:", track_id);
+
+    // Request stream URL from server via WebSocket
+    socket.emit('get_soundcloud_stream', track_id);
+    // Store position to seek to once stream URL arrives
+    sc_player._pending_pos = pos || 0;
+};
+
+sc_player._play_stream = function(stream_url, pos) {
+    if (!stream_url) {
+        console.error('No stream URL available');
+        sc_player.stop();
+        return;
+    }
+
+    sc_player.audio = new Audio(stream_url);
+    sc_player.audio.currentTime = pos || 0;
+    sc_player.audio.play().catch(function(e) {
+        console.error('SoundCloud playback error:', e);
     });
-}
+};
+
 sc_player.stop = function() {
-    try {
-      if (sc_player.stream) {
-          sc_player.stream.pause();
-      }
-    } catch (e) {
-      console.log(e);
+    if (sc_player.audio) {
+        sc_player.audio.pause();
+        sc_player.audio = null;
     }
     sc_player.playing_track_id = -1;
-    sc_player.stream = null;
-}
+    sc_player._pending_pos = 0;
+};
+
 sc_player.set_volume = function(vol) {
-    try {
-        if (sc_player.stream && sc_player.stream.setVolume) {
-            sc_player.stream.setVolume(vol/100);
-        }
-    } catch (e) {
-      console.log(e);
+    if (sc_player.audio) {
+        sc_player.audio.volume = vol / 100;
     }
-}
+};
+
+// WebSocket handler for stream URL (called when server resolves stream)
+socket.on('soundcloud_stream', function(data) {
+    if (data.track_id == sc_player.playing_track_id) {
+        console.log("Got SoundCloud stream URL for track:", data.track_id);
+        sc_player._play_stream(data.stream_url, sc_player._pending_pos);
+    }
+});
+
+socket.on('soundcloud_stream_error', function(data) {
+    console.error('SoundCloud stream error:', data.error);
+    if (data.track_id == sc_player.playing_track_id) {
+        sc_player.stop();
+    }
+});

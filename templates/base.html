@@ -5,7 +5,7 @@
 
     {% assets "css" %}
     <link rel="stylesheet" href="{{ ASSET_URL }}?{{CONF.CACHE_BUSTER}}" type="text/css">{% endassets %}
-    <script defer src="https://connect.soundcloud.com/sdk/sdk-3.1.2.js"></script>
+    <!-- SoundCloud SDK no longer needed - using server-side OAuth with HTML5 Audio -->
     <script defer src="https://www.youtube.com/iframe_api"></script>
     <script defer type="text/javascript" src="/config.js"></script>
     {% assets "js" %}
@@ -17,8 +17,8 @@
         {%block body%}{%endblock%}
         <script type="text/javascript">
             var user = "{{session.email}}";
-            window.SOUNDCLOUD_CLIENT_ID = "{{ CONF.SOUNDCLOUD_CLIENT_ID or '' }}";
-            window.SOUNDCLOUD_ENABLED = !!window.SOUNDCLOUD_CLIENT_ID;
+            // SoundCloud uses server-side OAuth now, just need to know if it's configured
+            window.SOUNDCLOUD_ENABLED = {{ 'true' if CONF.SOUNDCLOUD_CLIENT_ID and CONF.SOUNDCLOUD_CLIENT_SECRET else 'false' }};
         </script>
         {%block postjs%}{%endblock%}
         <div id="ytapiplayer"></div>

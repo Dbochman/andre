@@ -53,6 +53,42 @@ spotify_client = spotipy.client.Spotify(client_credentials_manager=server_tokens
 auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
 auth.get_access_token()
 
+# SoundCloud OAuth token cache (shared across all uses)
+_soundcloud_token = None
+_soundcloud_token_expires = 0
+
+def get_soundcloud_token():
+    """Get a valid SoundCloud OAuth token using client_credentials flow."""
+    global _soundcloud_token, _soundcloud_token_expires
+
+    # Return cached token if still valid (with 60s buffer)
+    if _soundcloud_token and time.time() < _soundcloud_token_expires - 60:
+        return _soundcloud_token
+
+    # Fetch new token
+    if not CONF.SOUNDCLOUD_CLIENT_ID or not CONF.SOUNDCLOUD_CLIENT_SECRET:
+        logger.warning("SoundCloud not configured: missing client_id or client_secret")
+        return None
+
+    try:
+        resp = requests.post('https://api.soundcloud.com/oauth2/token',
+            data={
+                'grant_type': 'client_credentials',
+                'client_id': CONF.SOUNDCLOUD_CLIENT_ID,
+                'client_secret': CONF.SOUNDCLOUD_CLIENT_SECRET,
+            },
+            timeout=10
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        _soundcloud_token = data['access_token']
+        _soundcloud_token_expires = time.time() + data.get('expires_in', 3600)
+        logger.info("Fetched new SoundCloud OAuth token (expires in %ds)", data.get('expires_in', 3600))
+        return _soundcloud_token
+    except Exception as e:
+        logger.error("Failed to get SoundCloud token: %s", e)
+        return None
+
 # Global rate limit tracker - uses Redis for persistence across container restarts
 _rate_limit_redis = None
 
@@ -582,7 +618,20 @@ class DB(object):
         return ""
 
     def add_soundcloud_song(self, userid, trackid, penalty=0):
-        response = requests.get('http://api.soundcloud.com/tracks/{0}.json?client_id={1}'.format(trackid, CONF.SOUNDCLOUD_CLIENT_ID))
+        token = get_soundcloud_token()
+        if not token:
+            logger.error("Cannot add SoundCloud song: no OAuth token available")
+            return
+
+        response = requests.get(
+            'https://api.soundcloud.com/tracks/{0}'.format(trackid),
+            headers={'Authorization': 'OAuth {}'.format(token)},
+            timeout=10
+        )
+        if response.status_code != 200:
+            logger.error("SoundCloud API error %d for track %s", response.status_code, trackid)
+            return
+
         track = response.json()
         if not track:
             return
@@ -600,7 +649,8 @@ class DB(object):
                     artist=artist,
                     duration=int(track['duration']) // 1000,
                     big_img=track['artwork_url'], auto=False,
-                    img=track['artwork_url'])
+                    img=track['artwork_url'],
+                    permalink_url=track.get('permalink_url'))
         self._add_song(userid, song, False, penalty=penalty)
 
     def add_youtube_song(self, userid, trackid, penalty=0):

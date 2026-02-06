@@ -400,14 +400,15 @@ var NowPlayingView = Backbone.View.extend({
         window.open('http://www.youtube.com/watch?v='+id, '_blank')
     },
     cloud: function(){
-        var id = this.model.get('trackid');
-        // get the SC URL from the trackID
-        api_url = 'http://api.soundcloud.com/tracks/'+id+'.json?client_id=8267fd360bf3864e78a43456a6b26d74';
-
-        $.ajax({url:api_url,
-                    dataType:'json',
-                    data:{}
-                }).then(function(data){ window.open( data.permalink_url,'_blank');});
+        var permalink = this.model.get('permalink_url');
+        if (permalink) {
+            window.open(permalink, '_blank');
+        } else {
+            // Fallback: construct URL from track ID (may not work for all tracks)
+            var id = this.model.get('trackid');
+            console.warn('No SoundCloud permalink stored, falling back to track ID');
+            window.open('https://soundcloud.com/tracks/' + id, '_blank');
+        }
     },
     jam: function(){
         socket.emit('jam', this.model.id);
@@ -1084,15 +1085,24 @@ function soundcloud_render(tracks) {
   }
 
 function soundcloud_url_search(q) {
-    SC.initialize({
-        client_id: '8267fd360bf3864e78a43456a6b26d74'
-    });
-    SC.get('/resolve', {url: q }).then(function(data) {
-        if (data.sharing == "public") {
-            soundcloud_render([data]);        
-        }
-    });
+    // Request server to resolve SoundCloud URL via OAuth
+    socket.emit('resolve_soundcloud', q);
 }
+
+// SoundCloud WebSocket handlers
+socket.on('soundcloud_resolved', function(data) {
+    if (!data || !data.id) {
+        console.warn('SoundCloud track not found');
+        return;
+    }
+    soundcloud_render([data]);
+});
+
+socket.on('soundcloud_error', function(data) {
+    console.error('SoundCloud error:', data.error);
+    var target = $('#soundcloud-results');
+    target.append('<div class="search-item"><div class="text"><h4>SoundCloud: ' + data.error + '</h4></div></div>');
+});
 
 function spotify_uri_search(q) {
     var segments = q.split(':');

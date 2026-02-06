@@ -4,6 +4,30 @@ All notable changes to Andre are documented in this file.
 
 ---
 
+## 2026-02-06
+
+### Features
+
+- **SoundCloud OAuth Integration** - Fully reactivated SoundCloud support with server-side OAuth
+  - SoundCloud deprecated simple client_id API authentication; now requires OAuth tokens
+  - Implemented `client_credentials` OAuth flow (server-side only, no user popup required)
+  - Backend fetches and caches OAuth tokens with automatic refresh
+  - Stream URLs are resolved server-side to get direct CDN URLs for HTML5 Audio playback
+  - Replaced SoundCloud SDK with lightweight HTML5 Audio player
+  - Added WebSocket events: `resolve_soundcloud`, `get_soundcloud_stream`
+  - Configuration: Add `SOUNDCLOUD_CLIENT_SECRET` to config alongside existing `SOUNDCLOUD_CLIENT_ID`
+
+**Files Changed**:
+- `app.py` - Added `get_soundcloud_token()`, `on_resolve_soundcloud()`, `on_get_soundcloud_stream()` handlers
+- `db.py` - Updated `add_soundcloud_song()` to use OAuth, added `permalink_url` to track data
+- `config.py` - Added `SOUNDCLOUD_CLIENT_SECRET` to env overrides
+- `config.example.yaml` - Added `SOUNDCLOUD_CLIENT_SECRET` placeholder
+- `static/js/app.js` - Updated `soundcloud_url_search()` to use WebSocket, updated `cloud()` function
+- `static/js/sc.js` - Rewrote to use HTML5 Audio with server-provided stream URLs
+- `templates/base.html` - Removed SoundCloud SDK, changed to `SOUNDCLOUD_ENABLED` boolean flag
+
+---
+
 ## 2026-02-05
 
 ### Features
