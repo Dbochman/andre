@@ -619,7 +619,7 @@ class DB(object):
 
     # Easter egg overrides for special tracks
     SOUNDCLOUD_OVERRIDES = {
-        '839681422': {  # CVS Bangers Volume 2
+        '424374522': {  # for use in discord - NSA BANGERS by Crustypunk&Kidkale
             'title': 'NSA Bangers',
             'artist': 'TOLKEINBLACK',
             'big_img': 'https://thumbnailer.mixcloud.com/unsafe/580x580/extaudio/6/8/c/9/fa7b-eaaf-49e2-baad-1edc21320911.jpg',
