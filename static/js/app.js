@@ -590,9 +590,11 @@ function fix_player(src, id, pos, paused){
         last_synced_spotify_track = id;
         console.log("Syncing to Spotify track:", id, "at position:", pos);
         spotify_play(id, pos);
-        // Respect local mute state and use local volume (volumeBeforeMute) instead of server volume
-        // This preserves the user's Spotify device volume rather than imposing the server's global volume
-        spotify_volume(localMuted ? 0 : volumeBeforeMute);
+        // Only enforce mute if the user has explicitly muted — otherwise leave
+        // the Spotify device volume alone so we don't override it on every track change
+        if (localMuted) {
+          spotify_volume(0);
+        }
       }
     }
     if (src == 'soundcloud'){

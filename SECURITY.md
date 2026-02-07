@@ -241,7 +241,7 @@ Based on [Redis Security Documentation](https://redis.io/docs/latest/operate/oss
 **Risk**: Unauthorized programmatic access to queue management (skip, remove, clear, etc.).
 
 **Implementation**:
-- `@require_api_token` decorator on all `/api/queue/*` endpoints
+- `@require_api_token` decorator on all `/api/queue/*` and `/api/spotify/*` endpoints
 - Bearer token in `Authorization` header
 - Constant-time comparison via `secrets.compare_digest()` (prevents timing side-channel attacks)
 - Token stored in `.env` file and 1Password (`op://OpenClaw/Andre API Token/password`)
@@ -399,8 +399,8 @@ docker compose up -d --build
 |------|---------|
 | `Dockerfile` | Non-root user, curl for healthcheck, pinned base image |
 | `docker-compose.yaml` | Networks, resource limits, read-only FS, security options, health checks |
-| `app.py` | `require_api_token` decorator, `/api/` in SAFE_PARAM_PATHS, 6 REST API endpoints |
-| `config.py` | `ANDRE_API_TOKEN` in ENV_OVERRIDES |
+| `app.py` | `require_api_token` decorator, `/api/` in SAFE_PARAM_PATHS, 9 REST API endpoints (queue + Spotify Connect) |
+| `config.py` | `ANDRE_API_TOKEN`, `ANDRE_SPOTIFY_EMAIL` in ENV_OVERRIDES |
 | `/etc/ssh/sshd_config` | Disabled root login and password auth |
 | `/etc/fail2ban/jail.local` | SSH jail with 365-day ban |
 
@@ -433,3 +433,4 @@ docker compose up -d --build
 | 2026-02-07 | Added Tailscale VPN for backup SSH access (100.92.192.62) |
 | 2026-02-07 | Added token-authenticated REST API endpoints with constant-time comparison |
 | 2026-02-07 | Re-hardened SSH (PasswordAuthentication=no, PermitRootLogin=no) |
+| 2026-02-07 | Added Spotify Connect REST API endpoints (devices, transfer, status) with token auth |

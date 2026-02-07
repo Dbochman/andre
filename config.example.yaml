@@ -81,3 +81,7 @@ CACHE_BUSTER: "2024-01-01"
 # API token for programmatic access (e.g., OpenClaw bot)
 # Generate: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ANDRE_API_TOKEN: ""
+
+# Email of Spotify account used for device control via REST API
+# Must have completed Spotify OAuth via the web UI first
+ANDRE_SPOTIFY_EMAIL: ""

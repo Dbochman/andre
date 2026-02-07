@@ -34,6 +34,7 @@ ENV_OVERRIDES = [
     'DEV_AUTH_EMAIL', 'YT_API_KEY', 'SOUNDCLOUD_CLIENT_ID', 'SOUNDCLOUD_CLIENT_SECRET',
     'ANDRE_HOSTNAME',  # Use ANDRE_HOSTNAME instead to avoid Docker conflict
     'ANDRE_API_TOKEN',
+    'ANDRE_SPOTIFY_EMAIL',
 ]
 
 def __read_conf(*files):

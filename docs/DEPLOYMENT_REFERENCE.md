@@ -187,6 +187,7 @@ Key variables in `/opt/andre/.env`:
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 - `ALLOWED_EMAIL_DOMAINS=gmail.com,dylanbochman.com`
 - `ANDRE_API_TOKEN=<token>` (for REST API auth; stored in 1Password)
+- `ANDRE_SPOTIFY_EMAIL=dylanbochman@gmail.com` (Spotify account for device control API)
 - `REDIS_PASSWORD=<password>`
 
 Generate a new API token: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
@@ -205,14 +206,29 @@ Token-authenticated endpoints for programmatic queue management. All require `Au
 | `/api/queue/pause` | POST | — | Pause playback |
 | `/api/queue/resume` | POST | — | Resume playback |
 | `/api/queue/clear` | POST | — | Clear entire queue |
+| `/api/spotify/devices` | GET | — | List Spotify Connect devices |
+| `/api/spotify/transfer` | POST | `{"device_id": "<id>", "play": true}` | Transfer playback to a device |
+| `/api/spotify/status` | GET | — | Current Spotify playback status |
 
 Example:
 ```bash
 curl -s -X POST https://andre.dylanbochman.com/api/queue/skip \
   -H "Authorization: Bearer $ANDRE_API_TOKEN"
+
+# List Spotify devices
+curl -s https://andre.dylanbochman.com/api/spotify/devices \
+  -H "Authorization: Bearer $ANDRE_API_TOKEN"
+
+# Transfer playback to a device
+curl -s -X POST https://andre.dylanbochman.com/api/spotify/transfer \
+  -H "Authorization: Bearer $ANDRE_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"device_id": "<id>", "play": true}'
 ```
 
 Returns `{"ok": true}` on success or `{"error": "message"}` on failure.
+
+**Note**: Spotify Connect endpoints require `ANDRE_SPOTIFY_EMAIL` to be set in `.env` and the corresponding user to have completed Spotify OAuth via the browser UI ("sync audio" button).
 
 ---
 

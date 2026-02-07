@@ -275,7 +275,7 @@ class MusicNamespace(WebSocketManager):
         self.email = email
         self.penalty = penalty
         self.auth = spotipy.oauth2.SpotifyOAuth(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI,
-                                                "prosecco:%s" % email, scope="streaming user-read-currently-playing", cache_path="%s/%s" % (CONF.OAUTH_CACHE_PATH, email))
+                                                "prosecco:%s" % email, scope="streaming user-read-currently-playing user-read-playback-state user-modify-playback-state", cache_path="%s/%s" % (CONF.OAUTH_CACHE_PATH, email))
         self.spawn(self.listener)
         self.log('New namespace for {0}'.format(self.email))
 
@@ -719,7 +719,7 @@ def spotify_callback():
     except Exception:
         pass
     auth = spotipy.oauth2.SpotifyOAuth(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI,
-                                       "prosecco:%s" % session['email'], scope="streaming user-read-currently-playing", cache_path="%s/%s" % (CONF.OAUTH_CACHE_PATH, session['email']))
+                                       "prosecco:%s" % session['email'], scope="streaming user-read-currently-playing user-read-playback-state user-modify-playback-state", cache_path="%s/%s" % (CONF.OAUTH_CACHE_PATH, session['email']))
     auth.get_access_token(request.values['code'])
     return redirect('/spotify_connect/')
 
@@ -1154,3 +1154,84 @@ def api_queue_resume():
 def api_queue_clear():
     d.nuke_queue(API_EMAIL)
     return jsonify(ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Spotify Connect (device control) API
+# ---------------------------------------------------------------------------
+
+SPOTIFY_CONNECT_SCOPE = "streaming user-read-currently-playing user-read-playback-state user-modify-playback-state"
+
+
+def _get_spotify_client():
+    """Build a Spotify client from the cached OAuth token for ANDRE_SPOTIFY_EMAIL.
+
+    Returns (spotipy.Spotify, None) on success or (None, error_string) on failure.
+    """
+    email = CONF.ANDRE_SPOTIFY_EMAIL
+    if not email:
+        return None, "ANDRE_SPOTIFY_EMAIL not configured"
+
+    try:
+        os.makedirs(CONF.OAUTH_CACHE_PATH)
+    except Exception:
+        pass
+
+    sp_auth = spotipy.oauth2.SpotifyOAuth(
+        CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI,
+        "prosecco:%s" % email, scope=SPOTIFY_CONNECT_SCOPE,
+        cache_path="%s/%s" % (CONF.OAUTH_CACHE_PATH, email))
+
+    token_info = sp_auth.get_cached_token()
+    if not token_info:
+        return None, "No cached Spotify token for %s — visit the web UI and click 'sync audio' first" % email
+
+    return spotipy.Spotify(auth=token_info['access_token']), None
+
+
+@app.route('/api/spotify/devices', methods=['GET'])
+@require_api_token
+def api_spotify_devices():
+    sp, err = _get_spotify_client()
+    if sp is None:
+        return jsonify(error=err), 503
+    try:
+        return jsonify(sp.devices())
+    except spotipy.exceptions.SpotifyException as e:
+        logger.error("Spotify devices error: %s", e)
+        return jsonify(error=str(e)), 502
+
+
+@app.route('/api/spotify/transfer', methods=['POST'])
+@require_api_token
+def api_spotify_transfer():
+    sp, err = _get_spotify_client()
+    if sp is None:
+        return jsonify(error=err), 503
+
+    body = request.get_json(silent=True) or {}
+    device_id = body.get('device_id')
+    if not device_id:
+        return jsonify(error='Missing required field: device_id'), 400
+
+    play = body.get('play', True)
+    try:
+        sp.transfer_playback(device_id, force_play=bool(play))
+        return jsonify(ok=True)
+    except spotipy.exceptions.SpotifyException as e:
+        logger.error("Spotify transfer error: %s", e)
+        return jsonify(error=str(e)), 502
+
+
+@app.route('/api/spotify/status', methods=['GET'])
+@require_api_token
+def api_spotify_status():
+    sp, err = _get_spotify_client()
+    if sp is None:
+        return jsonify(error=err), 503
+    try:
+        playback = sp.current_playback()
+        return jsonify(playback)
+    except spotipy.exceptions.SpotifyException as e:
+        logger.error("Spotify status error: %s", e)
+        return jsonify(error=str(e)), 502

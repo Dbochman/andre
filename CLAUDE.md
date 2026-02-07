@@ -88,6 +88,7 @@ Backbone.js + jQuery served as static files. Main logic in `static/js/app.js`. N
 - REST API endpoints under `/api/` use `@require_api_token` decorator with `secrets.compare_digest` for constant-time token comparison
 - `/api/` is in `SAFE_PARAM_PATHS` (bypasses session auth); token auth handled by decorator
 - Config: set `ANDRE_API_TOKEN` via environment variable or yaml config
+- Spotify Connect endpoints (`/api/spotify/*`) use the same Bearer token auth; require `ANDRE_SPOTIFY_EMAIL` to be set and the corresponding user to have completed Spotify OAuth via the browser
 
 ### Redis Data
 - Strings decoded automatically (`decode_responses=True`)
@@ -95,6 +96,9 @@ Backbone.js + jQuery served as static files. Main logic in `static/js/app.js`. N
 
 ### Spotify Token Handling
 Newer spotipy versions return dict from `get_access_token()`. Code handles both string and dict formats.
+
+### Spotify Connect (Device Control)
+Server-side Spotify playback control via REST API. The `_get_spotify_client()` helper loads a cached OAuth token for `ANDRE_SPOTIFY_EMAIL` and returns a spotipy client. Endpoints: `/api/spotify/devices`, `/api/spotify/transfer`, `/api/spotify/status`. Requires OAuth scope `user-read-playback-state user-modify-playback-state` (added to all SpotifyOAuth constructors).
 
 ## Known Limitations
 
