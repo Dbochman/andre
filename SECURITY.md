@@ -64,7 +64,27 @@ sudo fail2ban-client get sshd banned
 | 443/tcp | HTTPS | Allowed |
 | 6379 | Redis | **Blocked** (internal only) |
 
-### 4. Automatic Security Updates (High)
+### 4. Tailscale VPN (Critical)
+
+**Risk**: SSH lockout from fail2ban or firewall misconfiguration.
+
+**Implementation**:
+- Tailscale installed on droplet, accessible at `100.92.192.62`
+- Provides backup SSH access independent of public IP firewall rules
+- Not exposed to the public internet
+- Access restricted to tailnet members only (no external sharing enabled)
+
+```bash
+# Access via Tailscale (bypasses fail2ban/UFW)
+ssh deploy@100.92.192.62
+
+# Access via public IP (subject to fail2ban)
+ssh deploy@192.81.213.152
+```
+
+**Lesson learned**: The previous droplet was permanently locked out when fail2ban (365-day ban) combined with `PasswordAuthentication no` made recovery impossible, even via DO web console. Tailscale prevents this scenario.
+
+### 5. Automatic Security Updates (High)
 
 **Risk**: Unpatched vulnerabilities.
 
@@ -76,7 +96,7 @@ sudo fail2ban-client get sshd banned
 
 ## Docker Security
 
-### 5. Non-Root Containers (Critical)
+### 6. Non-Root Containers (Critical)
 
 **Risk**: Container escape with root privileges.
 
@@ -91,7 +111,7 @@ RUN groupadd --gid 1000 andre && \
 USER andre
 ```
 
-### 6. Pinned Image Versions (High)
+### 7. Pinned Image Versions (High)
 
 **Risk**: Supply chain attacks, unexpected breaking changes.
 
@@ -104,7 +124,7 @@ image: python:3.11-slim-bookworm@sha256:549988ff0804593d8373682ef5c0f0ceee48328a
 image: redis:7-alpine@sha256:02f2cc4882f8bf87c79a220ac958f58c700bdec0dfb9b9ea61b62fb0e8f1bfcf
 ```
 
-### 7. Network Isolation (High)
+### 8. Network Isolation (High)
 
 **Risk**: Lateral movement, data exfiltration from compromised containers.
 
@@ -121,7 +141,7 @@ networks:
     internal: true   # No internet access
 ```
 
-### 8. Resource Limits (Medium)
+### 9. Resource Limits (Medium)
 
 **Risk**: Resource exhaustion, DoS attacks.
 
@@ -132,7 +152,7 @@ networks:
 | Andre   | 1.0       | 512M         |
 | Player  | 0.5       | 256M         |
 
-### 9. Read-Only Filesystem (Medium)
+### 10. Read-Only Filesystem (Medium)
 
 **Risk**: Malware persistence, unauthorized modifications.
 
@@ -141,7 +161,7 @@ networks:
 - tmpfs mounts for `/tmp` and `__pycache__`
 - Only necessary directories mounted writable (`play_logs`, `oauth_creds`)
 
-### 10. Dropped Capabilities (Medium)
+### 11. Dropped Capabilities (Medium)
 
 **Risk**: Privilege escalation within containers.
 
@@ -155,7 +175,7 @@ cap_drop:
 
 **Note**: Redis requires `SETGID` and `SETUID` capabilities to switch to its internal user, so these are added back for Redis only.
 
-### 11. Health Checks (Low)
+### 12. Health Checks (Low)
 
 **Risk**: Unhealthy containers serving traffic.
 
@@ -164,7 +184,7 @@ cap_drop:
 - Andre: HTTP check on `/health` endpoint
 - Automatic container restart on failure
 
-### 12. Redis Authentication (High)
+### 13. Redis Authentication (High)
 
 **Risk**: Unauthorized access to Redis data if network misconfiguration occurs.
 
@@ -189,7 +209,7 @@ redis.StrictRedis(host=..., port=..., password=CONF.REDIS_PASSWORD, ...)
 - Internal network compromise
 - Container escape scenarios
 
-### 13. Redis Best Practices Checklist (Reference)
+### 14. Redis Best Practices Checklist (Reference)
 
 Based on [Redis Security Documentation](https://redis.io/docs/latest/operate/oss_and_stack/management/security/) and [DigitalOcean Best Practices](https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-redis-on-ubuntu):
 
@@ -214,6 +234,44 @@ Based on [Redis Security Documentation](https://redis.io/docs/latest/operate/oss
 
 ---
 
+## Application Security
+
+### 15. REST API Token Authentication (High)
+
+**Risk**: Unauthorized programmatic access to queue management (skip, remove, clear, etc.).
+
+**Implementation**:
+- `@require_api_token` decorator on all `/api/queue/*` endpoints
+- Bearer token in `Authorization` header
+- Constant-time comparison via `secrets.compare_digest()` (prevents timing side-channel attacks)
+- Token stored in `.env` file and 1Password (`op://OpenClaw/Andre API Token/password`)
+- Header format: `Authorization: Bearer <token>`
+- Rotate token immediately if leaked (update `/opt/andre/.env` + 1Password, then `docker compose restart andre`)
+
+```python
+# app.py
+def require_api_token(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        # ... validates Bearer token with secrets.compare_digest()
+```
+
+**Response codes**:
+| Code | Meaning |
+|------|---------|
+| 200 | Success |
+| 400 | Missing required field |
+| 401 | Missing/malformed Authorization header (includes `WWW-Authenticate: Bearer`) |
+| 403 | Invalid token |
+| 503 | Token not configured on server |
+
+**Key design decisions**:
+- `/api/` added to `SAFE_PARAM_PATHS` to bypass session/OAuth auth (token auth handled by decorator)
+- API paths return JSON errors, never 302 redirects to login page
+- Fixed `API_EMAIL = 'openclaw@api'` used for audit trail (not a real user)
+
+---
+
 ## Verification Commands
 
 Run these commands to verify security measures:
@@ -222,53 +280,71 @@ Run these commands to verify security measures:
 # === Server Security ===
 
 # 1. Check SSH config
-ssh deploy@192.241.153.83 "sudo sshd -T | grep -E '^(permitrootlogin|passwordauthentication)'"
+ssh deploy@192.81.213.152 "sudo sshd -T | grep -E '^(permitrootlogin|passwordauthentication)'"
 # Expected: permitrootlogin no, passwordauthentication no
 
 # 2. Check fail2ban status
-ssh deploy@192.241.153.83 "sudo fail2ban-client status sshd"
+ssh deploy@192.81.213.152 "sudo fail2ban-client status sshd"
 # Expected: Shows banned IPs and jail status
 
 # 3. Check firewall
-ssh deploy@192.241.153.83 "sudo ufw status"
+ssh deploy@192.81.213.152 "sudo ufw status"
 # Expected: Only ports 22, 80, 443 allowed
+
+# 4. Check Tailscale access
+ssh deploy@100.92.192.62 "echo 'Tailscale SSH OK'"
+# Expected: Tailscale SSH OK
 
 # === Docker Security ===
 
 # 4. Verify non-root user
-ssh deploy@192.241.153.83 "docker exec andre_app whoami"
+ssh deploy@192.81.213.152 "docker exec andre_app whoami"
 # Expected: andre (not root)
 
 # 5. Verify read-only filesystem
-ssh deploy@192.241.153.83 "docker exec andre_app touch /test 2>&1"
+ssh deploy@192.81.213.152 "docker exec andre_app touch /test 2>&1"
 # Expected: Read-only file system error
 
 # 6. Verify capabilities dropped
-ssh deploy@192.241.153.83 "docker exec andre_app cat /proc/1/status | grep CapEff"
+ssh deploy@192.81.213.152 "docker exec andre_app cat /proc/1/status | grep CapEff"
 # Expected: CapEff: 0000000000000000
 
 # 7. Verify resource limits
-ssh deploy@192.241.153.83 "docker stats --no-stream"
+ssh deploy@192.81.213.152 "docker stats --no-stream"
 # Expected: MEM LIMIT shows configured values
 
 # 8. Verify network isolation
-ssh deploy@192.241.153.83 "docker exec andre_redis ping -c 1 8.8.8.8 2>&1"
+ssh deploy@192.81.213.152 "docker exec andre_redis ping -c 1 8.8.8.8 2>&1"
 # Expected: Network unreachable
 
 # 9. Verify health checks
-ssh deploy@192.241.153.83 "docker inspect andre_app --format='{{.State.Health.Status}}'"
+ssh deploy@192.81.213.152 "docker inspect andre_app --format='{{.State.Health.Status}}'"
 # Expected: healthy
 
 # 10. Verify Redis authentication
-ssh deploy@192.241.153.83 "docker exec andre_redis redis-cli PING 2>&1"
+ssh deploy@192.81.213.152 "docker exec andre_redis redis-cli PING 2>&1"
 # Expected: NOAUTH Authentication required
 
-ssh deploy@192.241.153.83 "docker exec andre_redis redis-cli -a \$REDIS_PASSWORD PING 2>&1"
+ssh deploy@192.81.213.152 "docker exec andre_redis redis-cli -a \$REDIS_PASSWORD PING 2>&1"
 # Expected: PONG
 
 # 11. Verify Redis protected mode
-ssh deploy@192.241.153.83 "docker exec andre_redis redis-cli -a \$REDIS_PASSWORD CONFIG GET protected-mode"
+ssh deploy@192.81.213.152 "docker exec andre_redis redis-cli -a \$REDIS_PASSWORD CONFIG GET protected-mode"
 # Expected: protected-mode yes
+
+# === API Security ===
+
+# 12. Verify API rejects unauthenticated requests
+curl -s -o /dev/null -w "%{http_code}" -X POST https://andre.dylanbochman.com/api/queue/skip
+# Expected: 401
+
+# 13. Verify API rejects invalid token
+curl -s -o /dev/null -w "%{http_code}" -X POST https://andre.dylanbochman.com/api/queue/skip -H "Authorization: Bearer wrong"
+# Expected: 403
+
+# 14. Verify API accepts valid token
+curl -s -o /dev/null -w "%{http_code}" -X POST https://andre.dylanbochman.com/api/queue/skip -H "Authorization: Bearer \$ANDRE_API_TOKEN"
+# Expected: 200
 ```
 
 ---
@@ -277,7 +353,7 @@ ssh deploy@192.241.153.83 "docker exec andre_redis redis-cli -a \$REDIS_PASSWORD
 
 ### If you suspect a compromise:
 
-1. **Isolate**: `ssh deploy@... "docker compose down"`
+1. **Isolate**: `ssh deploy@192.81.213.152 "docker compose down"` (or via Tailscale: `ssh deploy@100.92.192.62`)
 2. **Preserve logs**: `ssh deploy@... "docker logs andre_app > /tmp/app.log 2>&1"`
 3. **Check for persistence**:
    ```bash
@@ -323,6 +399,8 @@ docker compose up -d --build
 |------|---------|
 | `Dockerfile` | Non-root user, curl for healthcheck, pinned base image |
 | `docker-compose.yaml` | Networks, resource limits, read-only FS, security options, health checks |
+| `app.py` | `require_api_token` decorator, `/api/` in SAFE_PARAM_PATHS, 6 REST API endpoints |
+| `config.py` | `ANDRE_API_TOKEN` in ENV_OVERRIDES |
 | `/etc/ssh/sshd_config` | Disabled root login and password auth |
 | `/etc/fail2ban/jail.local` | SSH jail with 365-day ban |
 
@@ -351,3 +429,7 @@ docker compose up -d --build
 | 2026-02-04 | Verified automatic security updates enabled |
 | 2026-02-05 | Added Redis password authentication and protected mode (response to DigitalOcean security notice) |
 | 2026-02-05 | Documented Redis security best practices checklist with references |
+| 2026-02-07 | Rebuilt droplet (new IP: 192.81.213.152) with cloud-init provisioning |
+| 2026-02-07 | Added Tailscale VPN for backup SSH access (100.92.192.62) |
+| 2026-02-07 | Added token-authenticated REST API endpoints with constant-time comparison |
+| 2026-02-07 | Re-hardened SSH (PasswordAuthentication=no, PermitRootLogin=no) |

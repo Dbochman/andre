@@ -8,7 +8,7 @@ This document captures the successful deployment of Andre to DigitalOcean on Feb
 |----------|-------|
 | **URL** | https://andre.dylanbochman.com |
 | **Server** | DigitalOcean Droplet (NYC1) |
-| **IP Address** | 192.241.153.83 |
+| **IP Address** | 192.81.213.152 |
 | **OS** | Ubuntu 22.04 LTS |
 | **Size** | 1GB RAM / 1 CPU / 25GB SSD |
 | **Cost** | $6/month |
@@ -30,7 +30,8 @@ Internet
                 ▼
 ┌─────────────────────────────────┐
 │  DigitalOcean Droplet           │
-│  192.241.153.83                 │
+│  192.81.213.152 (Tailscale:    │
+│  100.92.192.62)                 │
 │                                 │
 │  ┌───────────────────────────┐  │
 │  │  Caddy (systemd)          │  │
@@ -58,12 +59,14 @@ Internet
 ## SSH Access
 
 ```bash
-# As deploy user (recommended)
-ssh deploy@192.241.153.83
+# As deploy user via public IP
+ssh deploy@192.81.213.152
 
-# As root (if needed)
-ssh root@192.241.153.83
+# As deploy user via Tailscale (bypasses fail2ban/UFW)
+ssh deploy@100.92.192.62
 ```
+
+**Note**: Root login is disabled. Tailscale provides backup SSH access if the public IP is blocked by fail2ban.
 
 ---
 
@@ -110,15 +113,15 @@ From your local machine:
 # Sync code to server (excludes local config to preserve server settings)
 rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
   --exclude='.env' --exclude='local_config.yaml' --exclude='.cache' \
-  /Users/dylanbochman/repos/Andre/ deploy@192.241.153.83:/opt/andre/
+  /Users/dylanbochman/repos/Andre/ deploy@192.81.213.152:/opt/andre/
 
 # SSH in and rebuild
-ssh deploy@192.241.153.83 "cd /opt/andre && docker compose up -d --build"
+ssh deploy@192.81.213.152 "cd /opt/andre && docker compose up -d --build"
 ```
 
 **One-liner** (sync + rebuild):
 ```bash
-rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' --exclude='local_config.yaml' --exclude='.cache' /Users/dylanbochman/repos/Andre/ deploy@192.241.153.83:/opt/andre/ && ssh deploy@192.241.153.83 "cd /opt/andre && docker compose up -d --build"
+rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' --exclude='local_config.yaml' --exclude='.cache' /Users/dylanbochman/repos/Andre/ deploy@192.81.213.152:/opt/andre/ && ssh deploy@192.81.213.152 "cd /opt/andre && docker compose up -d --build"
 ```
 
 **Important**: `local_config.yaml` is excluded to prevent overwriting the server's production config (which has `HOSTNAME: andre.dylanbochman.com`).
@@ -127,10 +130,10 @@ rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude=
 
 ```bash
 # Check containers are healthy
-ssh deploy@192.241.153.83 "cd /opt/andre && docker compose ps"
+ssh deploy@192.81.213.152 "cd /opt/andre && docker compose ps"
 
 # Check recent logs for errors
-ssh deploy@192.241.153.83 "cd /opt/andre && docker compose logs --tail=20 andre"
+ssh deploy@192.81.213.152 "cd /opt/andre && docker compose logs --tail=20 andre"
 
 # Test the site
 curl -s -o /dev/null -w "%{http_code}" https://andre.dylanbochman.com/health
@@ -183,6 +186,33 @@ Key variables in `/opt/andre/.env`:
 - `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 - `ALLOWED_EMAIL_DOMAINS=gmail.com,dylanbochman.com`
+- `ANDRE_API_TOKEN=<token>` (for REST API auth; stored in 1Password)
+- `REDIS_PASSWORD=<password>`
+
+Generate a new API token: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
+
+---
+
+## REST API Endpoints
+
+Token-authenticated endpoints for programmatic queue management. All require `Authorization: Bearer <token>` header.
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/api/queue/skip` | POST | — | Skip current song |
+| `/api/queue/remove` | POST | `{"id": "<track_id>"}` | Remove song from queue |
+| `/api/queue/vote` | POST | `{"id": "<track_id>", "up": true}` | Upvote/downvote a song |
+| `/api/queue/pause` | POST | — | Pause playback |
+| `/api/queue/resume` | POST | — | Resume playback |
+| `/api/queue/clear` | POST | — | Clear entire queue |
+
+Example:
+```bash
+curl -s -X POST https://andre.dylanbochman.com/api/queue/skip \
+  -H "Authorization: Bearer $ANDRE_API_TOKEN"
+```
+
+Returns `{"ok": true}` on success or `{"error": "message"}` on failure.
 
 ---
 
@@ -261,7 +291,7 @@ systemctl restart caddy
 ### Manual Backup
 
 ```bash
-ssh deploy@192.241.153.83
+ssh deploy@192.81.213.152
 cd /opt/andre
 
 # Backup play_logs
@@ -303,4 +333,7 @@ docker compose restart redis
 ## Deployment Date
 
 - **Initial Deployment**: February 4, 2026
+- **Droplet Rebuilt**: February 7, 2026 (new IP: 192.81.213.152, added Tailscale + REST API)
+- **Droplet ID**: 550073923
+- **Tailscale IP**: 100.92.192.62
 - **Deployed By**: Claude Code + Dylan Bochman
