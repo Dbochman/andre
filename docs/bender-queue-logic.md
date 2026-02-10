@@ -175,6 +175,16 @@ BENDER_REGIONS:
   - US
 ```
 
+## UI Details
+
+### Bender Avatar
+Bender's user identity is `the@echonest.com`. The avatar image is `/static/theechonestcom.png` (180x269 portrait). In queue items, a `.bender-img` CSS class is conditionally applied to use `background-size: contain` with `background-position: left center` so the full image displays without cropping. Other user avatars use `background-size: cover` (standard for square Google profile photos).
+
+Hover text shows "Bender" instead of "the@echonest.com" for all Bender elements (person-image, jammers, now-playing jammers).
+
+### Hide Shame Mode
+The "hide shame" toggle (`FEEL_SHAME`) replaces all user avatars with Gravatar monsterid monsters. Each user gets a consistent, unique monster based on a hash of their email. The `shame_image(email, size)` function generates Gravatar URLs with `?d=monsterid&f=y` (force default, never show real gravatar). This applies to person images, jammer icons, now-playing jammers, and airhorn user images.
+
 ## Fair Scheduling
 
 Auto-fill songs (where `song['auto'] == True`) always score at the **end** of the queue. The `_score_track()` method has an early return for auto songs that places them after the last queued item, preventing bender tracks from being interleaved with human-queued songs.
