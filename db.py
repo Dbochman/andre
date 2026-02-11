@@ -238,6 +238,17 @@ class DB(object):
         if is_nest_deleting(self._r, self.nest_id):
             raise RuntimeError("Nest is being deleted")
 
+    def _check_queue_depth(self):
+        """Raise RuntimeError if a non-main nest's queue is at max depth."""
+        if self.nest_id == "main":
+            return
+        max_depth = getattr(CONF, 'NEST_MAX_QUEUE_DEPTH', 25)
+        if max_depth <= 0:
+            return
+        current = self._r.zcard(self._key('MISC|priority-queue'))
+        if current >= max_depth:
+            raise RuntimeError("Queue is full")
+
     def big_scrobble(self, email, tid):
         #add played song to FILTER "set"
         self._r.setex(self._key("FILTER|%s"% tid), CONF.BENDER_FILTER_TIME, 1)
@@ -931,6 +942,7 @@ class DB(object):
 
     def _add_song(self, userid, song, force_first, penalty=0):
         self._check_nest_active()
+        self._check_queue_depth()
         id = self._r.incr(self._key('MISC|playlist-plays'))
 
         song.update(dict(background_color='222222',

@@ -460,12 +460,16 @@ class MusicNamespace(WebSocketManager):
             self.logger.info(msg)
 
     def _safe_db_call(self, fn, *args, **kwargs):
-        """Call a DB method, catching RuntimeError if the nest is being deleted."""
+        """Call a DB method, catching RuntimeError for nest guard checks."""
         try:
             return fn(*args, **kwargs)
         except RuntimeError as e:
-            if "being deleted" in str(e):
+            msg = str(e)
+            if "being deleted" in msg:
                 self.emit('error', {'message': 'This nest is being deleted'})
+                return None
+            if "Queue is full" in msg:
+                self.emit('error', {'message': 'Queue is full (max 25 songs)'})
                 return None
             raise
 

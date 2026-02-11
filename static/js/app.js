@@ -1713,6 +1713,15 @@ function refresh_airhorns() {
 }
 
 // ---------------------------------------------------------------------------
+// Server error messages (e.g. queue full, nest being deleted)
+// ---------------------------------------------------------------------------
+
+socket.on('error', function(data) {
+    var msg = (data && data.message) ? data.message : 'Something went wrong';
+    confirm_dialog(msg);
+});
+
+// ---------------------------------------------------------------------------
 // Nest real-time listener count
 // ---------------------------------------------------------------------------
 
