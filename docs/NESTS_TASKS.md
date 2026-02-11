@@ -30,13 +30,13 @@ make test-all
 | `TestRedisKeyPrefixing` | `test/test_nests.py:641` | T1, T2 | 1 |
 | `TestMigrationHelpers` | `test/test_nests.py:705` | T3 | 1 |
 | `TestPubSubChannels` | `test/test_nests.py:725` | T4 | 1 |
-| `TestNestCleanupLogic` | `test/test_nests.py:662` | T10 | 2 |
-| `TestMembershipHeartbeat` | `test/test_nests.py:688` | T6, T9 | 2 |
+| `TestNestCleanupLogic` | `test/test_nests.py:662` | T3, T10 | 1-2 |
+| `TestMembershipHeartbeat` | `test/test_nests.py:688` | T3, T6 | 1-2 |
 | `TestMasterPlayerMultiNest` | `test/test_nests.py:740` | T10 | 2 |
 | `TestNestManagerCRUD` | `test/test_nests.py:755` | T6 | 2 |
 | `TestMigrationScriptBehavior` | `test/test_nests.py:786` | T3 | 1 |
 | `TestNestAuthGating` | `test/test_nests.py:805` | T7, T8 | 2 |
-| `TestWebSocketMembership` | `test/test_nests.py:833` | T9 | 2 |
+| `TestWebSocketMembership` | `test/test_nests.py:833` | T6, T9a | 2 |
 | `TestNestsAPI` | `test/test_nests.py:16` | T7, T8 | 2 |
 | `TestNestsAdminAPI` | `test/test_nests.py:241` | Phase 5 (future) |
 | `TestBillingAPI` | `test/test_nests.py:333` | Phase 5 (future) |
@@ -48,19 +48,22 @@ make test-all
 
 ### MVP-Relevant Tests (must pass by end of overnight run)
 
-These are the test classes that should flip from `xfail` to passing:
+These are the test classes that should flip from `xfail` to passing, grouped by when they should first pass:
 
-1. **`TestRedisKeyPrefixing`** — `DB._key()` returns correct prefixed keys
-2. **`TestMigrationHelpers`** — `legacy_key_mapping` dict maps old→new keys
-3. **`TestPubSubChannels`** — `pubsub_channel()` helper returns nest-scoped channel
-4. **`TestNestCleanupLogic`** — `should_delete_nest()` predicate logic
-5. **`TestMembershipHeartbeat`** — `member_key()` and `members_key()` helpers
-6. **`TestMasterPlayerMultiNest`** — `master_player_tick_all()` callable exists
-7. **`TestNestManagerCRUD`** — basic CRUD wiring exists
-8. **`TestMigrationScriptBehavior`** — migration entrypoint exists
-9. **`TestNestAuthGating`** — nest routes require auth
-10. **`TestWebSocketMembership`** — membership helpers wired
-11. **`TestNestsAPI`** — CRUD routes return correct status codes and shapes
+**After Phase 1 (T1-T5):**
+1. **`TestRedisKeyPrefixing`** — `DB._key()` returns correct prefixed keys (T1/T2)
+2. **`TestMigrationHelpers`** — `legacy_key_mapping` dict maps old→new keys (T3)
+3. **`TestPubSubChannels`** — `pubsub_channel()` helper returns nest-scoped channel (T3)
+4. **`TestNestCleanupLogic`** — `should_delete_nest()` predicate logic (T3)
+5. **`TestMembershipHeartbeat`** — `member_key()` and `members_key()` helpers (T3)
+6. **`TestMigrationScriptBehavior`** — migration entrypoint exists (T3)
+
+**After Phase 2 (T6-T10):**
+7. **`TestNestManagerCRUD`** — basic CRUD wiring exists (T6)
+8. **`TestWebSocketMembership`** — module-level `join_nest`/`leave_nest` wired (T6)
+9. **`TestNestsAPI`** — CRUD routes return correct status codes and shapes (T7/T8)
+10. **`TestNestAuthGating`** — nest routes require auth (T7/T8)
+11. **`TestMasterPlayerMultiNest`** — `master_player_tick_all()` callable exists (T10)
 
 ### Future Tests (should remain xfail for now)
 
@@ -110,17 +113,18 @@ These are the test classes that should flip from `xfail` to passing:
 **Verify:** `TestRedisKeyPrefixing` should still pass. Also run existing tests to check for regressions.
 **Done when:** all DB Redis ops are scoped via `_key()` (except global keys) and main-nest behavior remains unchanged.
 
-### T3: Implement helpers in nests.py + write migration script
-**Files:** `migrate_keys.py` (new), `nests.py` (scaffold exists — replace stubs with real implementations)
+### T3: Implement pure helper functions in nests.py + write migration script
+**Files:** `migrate_keys.py` (new), `nests.py` (scaffold exists — replace stubs for helper functions only)
+**Scope:** Pure helper functions and migration. Do NOT implement `NestManager` or module-level `join_nest`/`leave_nest` wrappers — those come in T6.
 **Changes:**
-- `nests.py` — replace `NotImplementedError` stubs with real implementations:
+- `nests.py` — replace `NotImplementedError` stubs for these **pure helpers only**:
   - `legacy_key_mapping` — dict mapping old keys to `NEST:main|`-prefixed keys
   - `pubsub_channel(nest_id)` — returns `f"NEST:{nest_id}|MISC|update-pubsub"`
   - `members_key(nest_id)` — returns `f"NEST:{nest_id}|MEMBERS"`
   - `member_key(nest_id, email)` — returns `f"NEST:{nest_id}|MEMBER:{email}"`
   - `refresh_member_ttl(nest_id, email, ttl_seconds=90)` — sets member TTL key
   - `should_delete_nest(metadata, members, queue_size, now)` — cleanup predicate
-  - `NestManager` should be importable from `nests.py` (tests import `nests.NestManager`)
+  - Leave `NestManager` and `join_nest`/`leave_nest` stubs as `NotImplementedError` (implemented in T6)
 - `migrate_keys.py` script that:
   - Connects to Redis and renames all existing keys to `NEST:main|` prefix
   - Uses `SCAN` to find keys matching ALL known prefixes:
@@ -132,13 +136,13 @@ These are the test classes that should flip from `xfail` to passing:
   - Dry-run mode flag
   - **Safety:** If `NEST:main|{key}` already exists, log a warning and skip (don't overwrite)
   - Provide a `migrate()` function in `migrate_keys.py` (tests check for it)
-**Commit:** `feat(nests): add nests helpers module and key migration script`
+**Commit:** `feat(nests): add nests helpers and key migration script`
 **Verify:**
 - `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestMigrationHelpers -v`
 - `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestPubSubChannels -v`
 - `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestMembershipHeartbeat -v`
 - `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestNestCleanupLogic -v`
-**Done when:** helper functions exist in `nests.py`, `migrate()` exists, and the four helper tests pass.
+**Done when:** helper functions work in `nests.py`, `migrate()` exists, and the four helper tests pass. `NestManager` stubs still raise `NotImplementedError`.
 
 ### T4: Update pub/sub subscription in app.py
 **File:** `app.py`
@@ -173,27 +177,28 @@ These are the test classes that should flip from `xfail` to passing:
 
 ## Phase 2: Nest Backend
 
-### T6: Implement NestManager class
-**File:** `nests.py` (replace NestManager stub — scaffold already has the class shape)
+### T6: Implement NestManager class + module-level wrappers
+**File:** `nests.py` (replace NestManager + join/leave stubs — scaffold already has the class shape)
+**Depends on:** T3 (pure helpers must be implemented first)
 **Changes:**
-- `NestManager` class with Redis connection — already stubbed in `nests.py`, replace `NotImplementedError` with real logic
-- `create_nest(creator_email, name=None)` → generates code, stores in `NESTS|registry`
-- `get_nest(nest_id)` → reads from registry
-- `list_nests()` → returns all nests with member counts
-- `delete_nest(nest_id)` → removes from registry + SCAN/DELETE all `NEST:{id}|*` keys
-- `touch_nest(nest_id)` → updates `last_activity`
-- `join_nest(nest_id, email)` → SADD to `NEST:{id}|MEMBERS`
-- `leave_nest(nest_id, email)` → SREM from `NEST:{id}|MEMBERS`
-- `generate_code()` → random 5-char from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, collision check
-- Initialize main nest in registry on first run if not present
-- Accept optional `redis_client` for test injection
-- **Module-level wrappers:** Also expose `join_nest(nest_id, email)` and `leave_nest(nest_id, email)` as module-level functions in `nests.py` (tests import them directly: `getattr(nests, "join_nest")`)
-**Commit:** `feat(nests): add NestManager class with CRUD operations`
+- `NestManager` class with Redis connection — replace `NotImplementedError` with real logic:
+  - `create_nest(creator_email, name=None)` → generates code, stores in `NESTS|registry`
+  - `get_nest(nest_id)` → reads from registry
+  - `list_nests()` → returns all nests with member counts
+  - `delete_nest(nest_id)` → removes from registry + SCAN/DELETE all `NEST:{id}|*` keys
+  - `touch_nest(nest_id)` → updates `last_activity`
+  - `join_nest(nest_id, email)` → SADD to `NEST:{id}|MEMBERS`
+  - `leave_nest(nest_id, email)` → SREM from `NEST:{id}|MEMBERS`
+  - `generate_code()` → random 5-char from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, collision check
+  - Initialize main nest in registry on first run if not present
+  - Accept optional `redis_client` for test injection
+- **Module-level wrappers:** Replace `join_nest` and `leave_nest` stubs at module level in `nests.py` with real implementations that delegate to a default NestManager instance. Tests import them directly: `getattr(nests, "join_nest")`, `getattr(nests, "leave_nest")`, `getattr(nests, "refresh_member_ttl")`
+**Commit:** `feat(nests): implement NestManager class with CRUD operations`
 **Verify:**
-- `TestMembershipHeartbeat` should pass (uses `members_key`/`member_key` from `nests.py`)
+- `TestMembershipHeartbeat` should already pass (uses pure helpers from T3)
 - `TestNestManagerCRUD` should pass (imports `nests.NestManager`)
 - `TestWebSocketMembership` should pass (imports `nests.join_nest`/`nests.leave_nest`)
-**Done when:** `nests.NestManager` CRUD works and `TestNestManagerCRUD` passes.
+**Done when:** `nests.NestManager` CRUD works, module-level wrappers work, and all three test classes pass.
 
 ### T7: Add nest API routes
 **File:** `app.py`
@@ -226,26 +231,35 @@ These are the test classes that should flip from `xfail` to passing:
 **Verify:** Part of `TestNestsAPI` tests
 **Done when:** `/nest/<code>` requires auth and renders nest context on success.
 
-### T9: WebSocket nest routing + membership heartbeat
+### T9a: WebSocket nest routing + per-nest DB instance
 **File:** `app.py`
+**Depends on:** T6 (NestManager must exist for join/leave calls)
 **Changes:**
 - Modify `before_request` WebSocket handling to extract nest_id from path:
   - `/socket` → `nest_id="main"` (backward compatible)
-  - `/socket/<nest_id>` → use that nest_id (validate it exists)
+  - `/socket/<nest_id>` → use that nest_id (validate it exists via NestManager)
 - Pass `nest_id` to `MusicNamespace.__init__`
 - `MusicNamespace` creates its own `DB(nest_id=...)` instance
 - On connect: `nest_manager.join_nest(nest_id, email)`
 - On disconnect (in `serve()` finally block): `nest_manager.leave_nest(nest_id, email)`
-- Update `nest_manager.touch_nest(nest_id)` on queue operations
-- **Heartbeat TTL:** Use per-member keys with TTL to handle stale members:
-  - On connect and periodically (every 30s in `serve()` loop): `SET NEST:{id}|MEMBER:{email} 1 EX 90`
-  - Use `member_key(nest_id, email)` from `nests.py` for key format
-  - The MEMBERS set tracks who's in the nest; the MEMBER:{email} TTL keys track liveness
-  - `should_delete_nest()` in cleanup should check MEMBER TTL keys, not just the MEMBERS set — if all member keys are expired, the set is stale
-  - On disconnect: delete the member key AND SREM from MEMBERS set
-**Commit:** `feat(nests): route WebSocket connections to specific nests with heartbeat`
-**Verify:** Hard to test via pytest (WebSocket mocking). Verify manually if possible. `TestMembershipHeartbeat` tests the key format helpers.
-**Done when:** `refresh_member_ttl()` is called periodically and stale members no longer block cleanup.
+- Update `nest_manager.touch_nest(nest_id)` on queue operations (add, vote, skip)
+**Commit:** `feat(nests): route WebSocket connections to specific nests`
+**Verify:** Hard to test via pytest (WebSocket mocking). `TestWebSocketMembership` tests the helper imports exist. Manually verify `/socket` still works for main nest.
+**Done when:** WebSocket connections route to the correct nest, DB is scoped per-nest, and join/leave fire on connect/disconnect.
+
+### T9b: Membership heartbeat TTL in WebSocket serve loop
+**File:** `app.py`
+**Depends on:** T9a (WebSocket routing must be in place)
+**Changes:**
+- Add heartbeat refresh in `MusicNamespace.serve()` loop:
+  - On connect: `refresh_member_ttl(nest_id, email, ttl_seconds=90)` from `nests.py`
+  - Every 30s in serve loop: call `refresh_member_ttl()` again
+  - Use `member_key(nest_id, email)` from `nests.py` for key format: `SET NEST:{id}|MEMBER:{email} 1 EX 90`
+- On disconnect (in `serve()` finally block): delete the member TTL key AND SREM from MEMBERS set
+- **Design:** The MEMBERS set tracks who's in the nest; the `MEMBER:{email}` TTL keys track liveness. Cleanup (T10) checks member TTL keys — if all are expired, the MEMBERS set is stale and the nest can be deleted.
+**Commit:** `feat(nests): add membership heartbeat TTL to WebSocket serve loop`
+**Verify:** `TestMembershipHeartbeat` tests the key format helpers. Manual verification: connect, wait >90s idle, member key should expire.
+**Done when:** `refresh_member_ttl()` is called every 30s in serve loop, member keys have 90s TTL, and disconnect cleans up both TTL key and MEMBERS set.
 
 ### T10: Add nest cleanup to master_player
 **Files:** `master_player.py`, `db.py`
@@ -269,45 +283,88 @@ These are the test classes that should flip from `xfail` to passing:
 
 ## Phase 3: Nest Frontend
 
+> **Note:** No Codex contract tests exist for frontend tasks. Verification is manual/visual. Each task has explicit acceptance criteria to keep scope clear.
+
 ### T11: Pass nest_id to frontend template
-**Files:** `templates/main.html`, `templates/config.js` (if exists), `app.py`
+**Files:** `templates/main.html`, `app.py`
+**Depends on:** T8 (`/nest/<code>` route must exist)
 **Changes:**
-- Pass `nest_id` and `nest_info` (name, code, is_main) to template context
-- Make it available to JavaScript (e.g., `window.NEST_ID`, `window.NEST_INFO`)
+- In `app.py`, pass `nest_id`, `nest_code`, `nest_name`, and `is_main_nest` to the template context for both `/` (main nest) and `/nest/<code>` routes
+- In `templates/main.html`, emit these as JS globals:
+  ```html
+  <script>
+    window.NEST_ID = "{{ nest_id }}";
+    window.NEST_CODE = "{{ nest_code }}";
+    window.NEST_NAME = "{{ nest_name }}";
+    window.IS_MAIN_NEST = {{ is_main_nest|tojson }};
+  </script>
+  ```
 **Commit:** `feat(nests): pass nest context to frontend templates`
-**Verify:** No specific Codex test. Verify template renders correctly.
+**Acceptance criteria:**
+- `/` sets `window.NEST_ID = "main"`, `window.IS_MAIN_NEST = true`
+- `/nest/X7K2P` sets `window.NEST_ID` to the nest's id, `window.NEST_CODE = "X7K2P"`, `window.IS_MAIN_NEST = false`
+- Existing page renders identically (no visible change)
 
 ### T12: Update WebSocket connection to use nest_id
 **File:** `static/js/app.js`
+**Depends on:** T11 (nest context must be in window globals), T9a (WebSocket routing must accept nest_id)
 **Changes:**
-- Read `window.NEST_ID` (default "main")
+- Read `window.NEST_ID` (default `"main"`)
 - Connect to `/socket/{nest_id}` instead of `/socket`
-- Keep backward compatible: if `NEST_ID` is "main" or undefined, connect to `/socket`
+- Backward compatible: if `NEST_ID` is `"main"` or undefined, connect to `/socket` (no path change)
 **Commit:** `feat(nests): connect WebSocket to nest-specific endpoint`
-**Verify:** No specific Codex test. Verify WebSocket connects.
+**Acceptance criteria:**
+- Main nest: WebSocket connects to `/socket` (or `/socket/main`) — queue updates work
+- Temporary nest: WebSocket connects to `/socket/{nest_id}` — queue updates scoped to that nest
+- No JavaScript errors in browser console
 
-### T13: Add nest bar UI
-**Files:** `templates/main.html`, `static/css/app.css`, `static/js/app.js`
+### T13a: Add nest bar HTML/CSS
+**Files:** `templates/main.html`, `static/css/app.css`
+**Depends on:** T11 (nest context must be available)
 **Changes:**
-- Add a nest bar above the main content area
-- When in Main Nest: show subtle "Build a Nest" button + "Join a Nest" input
-- When in a temporary nest: show nest name, code, "Share Nest" button, listener count, "Back to Main Nest" link
-- "Build a Nest" opens a modal with name input → POST /api/nests → show code + share link
-- "Join a Nest" input: enter 5-char code → navigate to `/nest/{code}`
-- "Share Nest" copies `echone.st/{code}` (or full URL if domain not configured) to clipboard
-- Style it to work with the existing 9-theme system
-**Commit:** `feat(nests): add nest bar UI with create/join flows`
-**Verify:** No specific Codex test. Visual inspection needed.
+- Add a `#nest-bar` div above the main content area in `main.html`
+- Two states controlled by `IS_MAIN_NEST`:
+  - **Main Nest:** Subtle bar with "Build a Nest" button and "Join a Nest" code input (5-char text field)
+  - **Temporary Nest:** Bar showing nest name, 5-char code badge, "Share Nest" button, listener count placeholder (`--`), and "Back to Main Nest" link
+- CSS should:
+  - Use CSS variables from the existing theme system so it adapts to all 9 themes
+  - Be a compact horizontal bar (not modal, not full-width banner)
+  - Not displace existing UI significantly (absolute or fixed position, or slim inline bar)
+**Commit:** `feat(nests): add nest bar HTML and CSS`
+**Acceptance criteria:**
+- Bar visible at top of page in both main and nest views
+- Bar adapts to all 9 color themes (uses existing CSS variables)
+- No layout breakage to existing queue/player UI
+- Static only — buttons don't need to work yet
 
-### T14: Show listener count
-**Files:** `static/js/app.js`, `app.py` (or via WebSocket)
+### T13b: Wire nest bar interactions (create/join/share)
+**Files:** `static/js/app.js`
+**Depends on:** T13a (bar HTML must exist), T7 (API routes must exist)
 **Changes:**
-- Display number of listeners in the nest bar
-- Option A: Fetch from `GET /api/nests/{code}` periodically
-- Option B: Broadcast listener count changes via pub/sub (preferred for real-time)
-- Add a `member_update` pub/sub message type when membership changes
+- "Build a Nest" button: opens inline form (or small modal) with name input → `POST /api/nests` → on success, display code + `echone.st/{code}` share link, then navigate to `/nest/{code}`
+- "Join a Nest" input: on submit (Enter or button), validate 5-char code → navigate to `/nest/{code}` (server returns 404 if invalid)
+- "Share Nest" button: copy `echone.st/{code}` (or `window.location.origin + /nest/{code}` if `ECHONEST_DOMAIN` not configured) to clipboard via `navigator.clipboard.writeText()`
+- "Back to Main Nest" link: navigate to `/`
+- Error handling: show inline error if API returns error (use shapes from `docs/NESTS_API_ERRORS.md`)
+**Commit:** `feat(nests): wire nest bar create/join/share interactions`
+**Acceptance criteria:**
+- "Build a Nest" calls API, gets code, navigates to new nest
+- "Join a Nest" navigates to `/nest/{code}` on valid input
+- "Share Nest" copies link to clipboard (verify via paste)
+- Errors display inline (not alert boxes)
+
+### T14: Show real-time listener count in nest bar
+**Files:** `static/js/app.js`, `app.py`
+**Depends on:** T13a (nest bar must exist), T9b (heartbeat must be wired)
+**Changes:**
+- Backend: broadcast a `member_update` event via pub/sub when `join_nest` or `leave_nest` is called (include `count` field)
+- Frontend: listen for `member_update` WebSocket message and update the listener count in `#nest-bar`
+- Fallback: on initial page load, fetch count from `GET /api/nests/{code}` response
 **Commit:** `feat(nests): show real-time listener count in nest bar`
-**Verify:** No specific Codex test. Verify count updates.
+**Acceptance criteria:**
+- Listener count updates within 2s of someone joining/leaving
+- Count shows `--` before first update (not `0` or empty)
+- Count is accurate after page reload (fetched from API)
 
 ---
 
@@ -372,7 +429,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 
 1. **db.py refactor (T2)** — Most error-prone task. Every Redis key must be wrapped. Missing one means silent data corruption (writing to wrong key). Be exhaustive. The complete list of key prefixes in db.py: `MISC|*`, `QUEUE|*`, `QUEUE|VOTE|*`, `FILTER|*`, `BENDER|*`, `QUEUEJAM|*`, `COMMENTS|*`, `FILL-INFO|*`, `AIRHORNS`, `FREEHORN_*`.
 2. **pub/sub channel scoping (T4)** — If the channel name doesn't match between publisher (db.py) and subscriber (app.py), real-time updates break silently.
-3. **WebSocket disconnect handling (T9)** — Must reliably call `leave_nest` even on abnormal disconnects. The `finally` block in `serve()` is the right place. Must also refresh heartbeat TTL key periodically to prevent stale members blocking cleanup.
+3. **WebSocket disconnect handling (T9a/T9b)** — Must reliably call `leave_nest` even on abnormal disconnects. The `finally` block in `serve()` is the right place (T9a). Must also refresh heartbeat TTL key every 30s to prevent stale members blocking cleanup (T9b).
 4. **master_player multi-nest (T10)** — The lock mechanism (`MISC|master-player` via `setnx`) needs to be per-nest: `NEST:{id}|MISC|master-player`. Keep `MISC|spotify-rate-limited` global (not nest-scoped).
-5. **nests.py module name (T3)** — Tests import `nests` module via `importlib.import_module("nests")`. The file MUST be named `nests.py` at the project root, not `nest_manager.py`. Either name the file `nests.py` or ensure `nest_manager.py` exports the expected helpers AND update the import in tests. **Recommended:** Create `nests.py` with the helper functions and keep `nest_manager.py` for the NestManager class, OR put everything in `nests.py`.
+5. **nests.py module name (T3/T6)** — `nests.py` scaffold already exists at project root with `NotImplementedError` stubs. Tests import via `importlib.import_module("nests")`. T3 replaces pure helper stubs; T6 replaces `NestManager` + `join_nest`/`leave_nest` stubs. Do NOT rename to `nest_manager.py` — that breaks test imports.
 6. **Migration safety (T3)** — Use `DUMP`+`RESTORE`+`DEL` (not `RENAME`) to avoid clobbering if destination key already exists from a partial migration. Skip with warning if destination exists. Cover ALL 9 prefix families, not just the 4 main ones.

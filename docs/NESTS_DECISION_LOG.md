@@ -93,3 +93,27 @@ For async handoffs, use `docs/NESTS_HANDOFF_TEMPLATE.md`.
 **Context:** Plan listed `JAMS|{song_id}` and `AIRHORN|{user}` but db.py uses `QUEUEJAM|{song_id}`, `AIRHORNS`, and `FREEHORN_{userid}`.
 **Decision:** Updated plan's Redis key reference to match actual db.py key names. Added missing keys: `FILL-INFO|{trackid}`, `MEMBER:{email}`.
 **Rationale:** Migration and T2 refactor must use the real key names. Drift between plan and code causes silent data loss.
+
+---
+
+## D012: T3/T6 scope split — pure helpers vs NestManager
+**Date:** 2026-02-11 (pre-implementation review)
+**Context:** T3 originally implemented ALL `nests.py` stubs (helpers + NestManager), then T6 also said "implement NestManager." Overlap made it unclear what each task owns.
+**Decision:** T3 implements only pure helper functions (`legacy_key_mapping`, `pubsub_channel`, `members_key`, `member_key`, `refresh_member_ttl`, `should_delete_nest`) + `migrate_keys.py`. T6 implements `NestManager` class + module-level `join_nest`/`leave_nest` wrappers.
+**Rationale:** Clear ownership per task. T3 has no Redis dependency (pure functions + migration script). T6 is the first task that needs a live Redis connection for CRUD. This also means Phase 1 tests pass without NestManager, validating the helper layer independently.
+
+---
+
+## D013: T9 split into T9a (routing) and T9b (heartbeat)
+**Date:** 2026-02-11 (pre-implementation review)
+**Context:** T9 was overloaded with 6 concerns: WebSocket path routing, nest_id extraction, per-nest DB instance, membership join/leave, touch on operations, AND heartbeat TTL with periodic loop changes.
+**Decision:** Split into T9a (WebSocket routing, per-nest DB, join/leave) and T9b (heartbeat TTL refresh in serve loop).
+**Rationale:** T9a changes the connection setup and teardown path. T9b modifies the serve loop's inner timing. These are independently testable and independently risky. If heartbeat breaks, routing still works. Smaller commits are easier to bisect.
+
+---
+
+## D014: Phase 3 tasks split T13 and add acceptance criteria
+**Date:** 2026-02-11 (pre-implementation review)
+**Context:** T13 was a single task covering HTML/CSS layout, modal interactions, API calls, clipboard API, and theme integration. Phase 3 had no acceptance criteria (just "visual inspection needed").
+**Decision:** Split T13 into T13a (static HTML/CSS bar) and T13b (JavaScript interactions). Added explicit acceptance criteria to all Phase 3 tasks. Added dependency chains.
+**Rationale:** T13a can be verified visually without any API. T13b requires working API routes (T7). Acceptance criteria prevent scope creep and make it clear when a task is done.
