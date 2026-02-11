@@ -35,6 +35,7 @@ ENV_OVERRIDES = [
     'ANDRE_HOSTNAME',  # Use ANDRE_HOSTNAME instead to avoid Docker conflict
     'ANDRE_API_TOKEN',
     'ANDRE_SPOTIFY_EMAIL',
+    'NESTS_ENABLED',
 ]
 
 def __read_conf(*files):
