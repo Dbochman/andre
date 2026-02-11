@@ -150,7 +150,10 @@ let proto = 'wss';
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
     proto = 'ws';
 }
-socket = new Socket(proto + '://'+location.host+'/socket/');
+// Connect to nest-specific WebSocket endpoint when in a temporary nest
+var _nestId = window.NEST_ID || 'main';
+var _socketPath = (_nestId && _nestId !== 'main') ? '/socket/' + _nestId + '/' : '/socket/';
+socket = new Socket(proto + '://'+location.host+_socketPath);
 
 var Song = Backbone.Model.extend({
 });
