@@ -27,10 +27,10 @@ SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestRedisKeyPrefix
 | `TestNestCleanupLogic` | `test/test_nests.py:662` | T10 | 2 |
 | `TestMembershipHeartbeat` | `test/test_nests.py:688` | T6, T9 | 2 |
 | `TestMasterPlayerMultiNest` | `test/test_nests.py:740` | T10 | 2 |
-| `TestNestManagerCRUD` | `test/test_nests.py:760` | T6 | 2 |
-| `TestMigrationScriptBehavior` | `test/test_nests.py:789` | T3 | 1 |
-| `TestNestAuthGating` | `test/test_nests.py:807` | T7, T8 | 2 |
-| `TestWebSocketMembership` | `test/test_nests.py:841` | T9 | 2 |
+| `TestNestManagerCRUD` | `test/test_nests.py:755` | T6 | 2 |
+| `TestMigrationScriptBehavior` | `test/test_nests.py:786` | T3 | 1 |
+| `TestNestAuthGating` | `test/test_nests.py:805` | T7, T8 | 2 |
+| `TestWebSocketMembership` | `test/test_nests.py:833` | T9 | 2 |
 | `TestNestsAPI` | `test/test_nests.py:16` | T7, T8 | 2 |
 | `TestNestsAdminAPI` | `test/test_nests.py:241` | Phase 5 (future) |
 | `TestBillingAPI` | `test/test_nests.py:333` | Phase 5 (future) |
