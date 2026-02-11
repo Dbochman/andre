@@ -376,12 +376,33 @@ When in the Main Nest, show a subtle "Build a Nest" button (doesn't clutter the 
 3. Add `/nest/{code}` route
 4. Deploy — full feature live
 
-### Phase 4: echone.st Domain
+### Phase 4: echone.st Domain — DONE
 
-1. Register `echone.st` domain
-2. Configure DNS + redirect (Caddy or Cloudflare)
-3. Update "Share Nest" button to use short URL
-4. Optional: serve Andre directly from `echone.st`
+Domain is registered (Netim, Lite Hosting, expires 2027-02-11) and configured on Cloudflare.
+
+**Cloudflare Zone:**
+- Zone ID: `583f76bbb1bd8c655b86958885fdef76`
+- Account: `324caf800a82364b608b3e82d9a1debd` (dylanbochman@gmail.com)
+- Nameservers: `eric.ns.cloudflare.com`, `monika.ns.cloudflare.com` (set at Netim)
+- SSL: Full + Always Use HTTPS
+- API key stored in 1Password ("Cloudflare Global API Key")
+
+**DNS Records:**
+- `echone.st` → A `192.0.2.1` (proxied, dummy — Cloudflare handles redirect)
+- `www.echone.st` → A `192.0.2.1` (proxied)
+
+**Page Rules (2 of 3 free slots used):**
+1. `echone.st/*` → **302** → `https://andre.dylanbochman.com` (temporary blanket redirect while nests feature is in progress)
+2. `www.echone.st/*` → **301** → `https://echone.st/$1`
+
+**When nests feature ships:** Update page rule 1 to:
+- `echone.st/*` → **302** → `https://andre.dylanbochman.com/nest/$1`
+- This makes `echone.st/X7K2P` redirect to `andre.dylanbochman.com/nest/X7K2P`
+- Page rule ID: `6cf80b1b24a734f6194b82a02e09e79f`
+
+**Remaining TODO:**
+- Update "Share Nest" button to use `echone.st/{code}` short URL
+- Optional: serve Andre directly from `echone.st` as an alias domain (nicer than redirect)
 
 ### Phase 5: Polish
 

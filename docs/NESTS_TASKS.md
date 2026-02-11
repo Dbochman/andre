@@ -375,6 +375,7 @@ These are the test classes that should flip from `xfail` to passing, grouped by 
 - [ ] **T16: Test manually** (if possible — start dev server, create/join nests)
 - [ ] **T17: Update CHANGELOG.md** — Add Nests feature entry
 - [ ] **T18: Review decision log** — Ensure all decisions are documented
+- [ ] **T19: Flip echone.st redirect to nest routes** — Update Cloudflare page rule `6cf80b1b24a734f6194b82a02e09e79f` from blanket redirect (`→ andre.dylanbochman.com`) to nest redirect (`→ andre.dylanbochman.com/nest/$1`). See `docs/NESTS_PLAN.md` Phase 4 for details.
 
 ---
 
