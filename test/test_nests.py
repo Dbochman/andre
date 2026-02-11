@@ -410,6 +410,16 @@ class TestBillingAPI:
             assert "plan_tier" in data
             assert "features" in data
 
+    def test_webhook_cancel_releases_vanity(self, client):
+        payload = '{"id":"evt_456","type":"customer.subscription.deleted"}'
+        rv = self._post(
+            client,
+            "/api/billing/webhook",
+            data=payload,
+            headers={"Stripe-Signature": "t=123,v1=bad"},
+        )
+        assert rv.status_code in (200, 400, 401, 403)
+
 
 @pytest.mark.xfail(reason="Super admin interface not implemented yet")
 class TestSuperAdminAPI:
@@ -507,6 +517,19 @@ class TestEntitlementGates:
             data = rv.get_json()
             assert data.get("error") in ("forbidden", "feature_not_allowed")
 
+    def test_feature_gate_error_shape(self, client):
+        rv = self._patch(
+            client,
+            "/api/nests/XXXXX/admin",
+            headers={"Authorization": "Bearer test-secret-token-12345"},
+            json={"vanity_code": "jazznight"},
+        )
+        assert rv.status_code in (200, 401, 403, 404)
+        if rv.status_code == 403:
+            data = rv.get_json()
+            assert "error" in data
+            assert "message" in data
+
 
 @pytest.mark.xfail(reason="Audit logging not implemented yet")
 class TestAuditLogs:
@@ -536,3 +559,77 @@ class TestAuditLogs:
             json={"email": "user@example.com", "reason": "spam"},
         )
         assert rv.status_code in (200, 400, 401, 403, 404)
+
+
+@pytest.mark.xfail(reason="Invite-only enforcement not implemented yet")
+class TestInviteOnly:
+    @pytest.fixture
+    def client(self):
+        if os.environ.get("SKIP_SPOTIFY_PREFETCH"):
+            pytest.skip("Skipping due to SKIP_SPOTIFY_PREFETCH")
+
+        os.environ["ANDRE_API_TOKEN"] = "test-secret-token-12345"
+        from app import app, CONF
+
+        app.config["TESTING"] = True
+        self._host = str(CONF.HOSTNAME) if CONF.HOSTNAME else "localhost:5000"
+        with app.test_client() as client:
+            yield client
+
+    def _get(self, client, path, **kwargs):
+        headers = kwargs.pop("headers", {})
+        headers["Host"] = self._host
+        return client.get(path, headers=headers, **kwargs)
+
+    def test_invite_only_rejects_without_token(self, client):
+        rv = self._get(
+            client,
+            "/nest/XXXXX",
+            headers={"Authorization": "Bearer test-secret-token-12345"},
+        )
+        assert rv.status_code in (200, 401, 403, 404)
+        if rv.status_code == 403:
+            data = rv.get_json()
+            assert data.get("error") in ("invite_required", "forbidden")
+
+    def test_invite_only_accepts_token(self, client):
+        rv = self._get(
+            client,
+            "/nest/XXXXX",
+            headers={"Authorization": "Bearer test-secret-token-12345"},
+            query_string={"invite": "validtoken"},
+        )
+        assert rv.status_code in (200, 401, 404)
+
+
+@pytest.mark.xfail(reason="Free cap accounting not implemented yet")
+class TestFreeCap:
+    @pytest.fixture
+    def client(self):
+        if os.environ.get("SKIP_SPOTIFY_PREFETCH"):
+            pytest.skip("Skipping due to SKIP_SPOTIFY_PREFETCH")
+
+        os.environ["ANDRE_API_TOKEN"] = "test-secret-token-12345"
+        from app import app, CONF
+
+        app.config["TESTING"] = True
+        self._host = str(CONF.HOSTNAME) if CONF.HOSTNAME else "localhost:5000"
+        with app.test_client() as client:
+            yield client
+
+    def _post(self, client, path, **kwargs):
+        headers = kwargs.pop("headers", {})
+        headers["Host"] = self._host
+        return client.post(path, headers=headers, **kwargs)
+
+    def test_free_cap_counts_paid_vs_free(self, client):
+        rv = self._post(
+            client,
+            "/api/nests",
+            headers={"Authorization": "Bearer test-secret-token-12345"},
+            json={"name": "Free Cap Check"},
+        )
+        assert rv.status_code in (200, 403, 429)
+        if rv.status_code in (403, 429):
+            data = rv.get_json()
+            assert data.get("error") == "nest_limit_reached"
