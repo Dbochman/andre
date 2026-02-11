@@ -1441,9 +1441,9 @@ function make_player(ev){
         last_spotify_track = null;
         last_synced_spotify_track = null;
         $('#ytapiplayer').css('z-index', 900);
-        // Show sync audio button again when disconnected, hide airhorn
+        // Show sync audio buttons again when disconnected
         $('#sync-audio-btn').show();
-        $('#do-airhorn').hide();
+        $('#airhorn-sync-audio').show();
         return;
     }
     if (auth_token == null) {
@@ -1462,9 +1462,9 @@ function make_player(ev){
     socket.emit('request_volume');
 
     $('#make-player').text('disconnect audio');
-    // Hide sync audio button when connected, show airhorn
+    // Hide sync audio buttons when connected
     $('#sync-audio-btn').hide();
-    $('#do-airhorn').show();
+    $('#airhorn-sync-audio').hide();
 }
 
 function spotify_connect(url) {
@@ -1857,6 +1857,7 @@ window.addEventListener('load', function(){
                                     playlist_result_click);
     $('#make-player').on('click', make_player);
     $('#sync-audio-btn').on('click', make_player);
+    $('#airhorn-sync-audio').on('click', make_player);
     $('#change-color').on('click', changeColors);
 
     // Load saved color theme
