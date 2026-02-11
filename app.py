@@ -95,7 +95,12 @@ def _parse_session_cookie():
         return None
 
 def _handle_websocket():
-    """Handle WebSocket connections in before_request (before Flask route dispatch)."""
+    """Handle WebSocket connections in before_request (before Flask route dispatch).
+
+    Supports:
+      /socket       -> nest_id="main"
+      /socket/<id>  -> nest_id=<id> (validated via NestManager)
+    """
     ws = request.environ.get('wsgi.websocket')
 
     if ws is None:
@@ -110,7 +115,20 @@ def _handle_websocket():
         logger.warning('WebSocket unauthorized - no email in session')
         return 'Unauthorized', 401
 
-    MusicNamespace(email, 0).serve()
+    # Extract nest_id from path: /socket -> main, /socket/<id> -> id
+    path = request.path.rstrip('/')
+    parts = path.split('/')
+    # /socket -> ['', 'socket'], /socket/ABC -> ['', 'socket', 'ABC']
+    if len(parts) >= 3 and parts[2]:
+        nest_id = parts[2]
+        # Validate nest exists
+        if nest_manager and nest_manager.get_nest(nest_id) is None:
+            logger.warning('WebSocket: nest %s not found', nest_id)
+            return 'Nest not found', 404
+    else:
+        nest_id = "main"
+
+    MusicNamespace(email, 0, nest_id=nest_id).serve()
     return ''
 
 def _handle_volume_websocket():
@@ -265,15 +283,20 @@ class WebSocketManager(object):
         except Exception:
             logger.exception('WebSocket error')
         finally:
+            self._on_disconnect()
             try:
                 self._ws.close()
             except Exception:
                 pass
             gevent.killall(self._children)
 
+    def _on_disconnect(self):
+        """Hook called when WebSocket disconnects. Override in subclass."""
+        pass
+
 
 class MusicNamespace(WebSocketManager):
-    def __init__(self, email, penalty):
+    def __init__(self, email, penalty, nest_id="main"):
         super(MusicNamespace, self).__init__()
         try:
             os.makedirs(CONF.OAUTH_CACHE_PATH)
@@ -282,14 +305,31 @@ class MusicNamespace(WebSocketManager):
         self.logger = app.logger
         self.email = email
         self.penalty = penalty
+        self.nest_id = nest_id
+        # Create a per-nest DB instance
+        self.db = DB(init_history_to_redis=False, nest_id=nest_id)
         self.auth = spotipy.oauth2.SpotifyOAuth(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI,
                                                 "prosecco:%s" % email, scope="streaming user-read-currently-playing user-read-playback-state user-modify-playback-state", cache_path="%s/%s" % (CONF.OAUTH_CACHE_PATH, email))
+        # Join nest on connect
+        if nest_manager:
+            try:
+                nest_manager.join_nest(nest_id, email)
+            except Exception:
+                logger.exception('Failed to join nest %s', nest_id)
         self.spawn(self.listener)
-        self.log('New namespace for {0}'.format(self.email))
+        self.log('New namespace for {0} (nest={1})'.format(self.email, self.nest_id))
+
+    def _on_disconnect(self):
+        """Leave nest on WebSocket disconnect."""
+        if nest_manager:
+            try:
+                nest_manager.leave_nest(self.nest_id, self.email)
+            except Exception:
+                logger.exception('Failed to leave nest %s', self.nest_id)
 
     def listener(self):
         r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379, password=CONF.REDIS_PASSWORD or None, decode_responses=True).pubsub()
-        r.subscribe(pubsub_channel("main"))
+        r.subscribe(pubsub_channel(self.nest_id))
         for m in r.listen():
             if m['type'] != 'message':
                 continue
@@ -316,7 +356,7 @@ class MusicNamespace(WebSocketManager):
                 _, data = msg.split('|', 1)
                 self.emit('no_airhorn', json.loads(data))
             elif msg == 'update_freehorn':
-                self.emit('free_horns', d.get_free_horns(self.email))
+                self.emit('free_horns', self.db.get_free_horns(self.email))
 
     def log(self, msg, debug=True):
         if debug:
@@ -325,31 +365,30 @@ class MusicNamespace(WebSocketManager):
             self.logger.info(msg)
 
     def on_request_volume(self):
-        self.emit('volume', str(d.get_volume()))
+        self.emit('volume', str(self.db.get_volume()))
 
     def on_change_volume(self, vol):
-        self.emit('volume', str(d.set_volume(vol)))
+        self.emit('volume', str(self.db.set_volume(vol)))
 
     def on_add_song(self, song_id, src):
         logger.info('on_add_song called: song_id=%s, src=%s, email=%s', song_id, src, self.email)
         if src == 'spotify':
             self.log(
                 'add_spotify_song "{0}" "{1}"'.format(self.email, song_id))
-            d.add_spotify_song(self.email, song_id, penalty=self.penalty)
+            self.db.add_spotify_song(self.email, song_id, penalty=self.penalty)
         elif src == 'youtube':
             logger.info('Adding YouTube song: %s for user %s', song_id, self.email)
-            d.add_youtube_song(self.email, song_id, penalty=self.penalty)
+            self.db.add_youtube_song(self.email, song_id, penalty=self.penalty)
         elif src == 'soundcloud':
             self.log(
                 'add_soundcloud_song "{0}" "{1}"'.format(self.email, song_id))
-            d.add_soundcloud_song(self.email, song_id, penalty=self.penalty)
-        # self.log(d.get_queued()[-1])
+            self.db.add_soundcloud_song(self.email, song_id, penalty=self.penalty)
 
     def on_fetch_playlist(self):
-        self.emit('playlist_update', d.get_queued())
+        self.emit('playlist_update', self.db.get_queued())
 
     def on_fetch_now_playing(self):
-        self.emit('now_playing_update', d.get_now_playing())
+        self.emit('now_playing_update', self.db.get_now_playing())
 
     def on_fetch_search_token(self):
         logger.debug("fetch search token")
@@ -381,31 +420,31 @@ class MusicNamespace(WebSocketManager):
             self.emit('auth_token_refresh', self.auth.get_authorize_url())
 
     def on_fetch_airhorns(self):
-        self.emit('airhorns', d.get_horns())
+        self.emit('airhorns', self.db.get_horns())
 
     def on_vote(self, id, up):
         self.log('Vote from {0} on {1} {2}'.format(self.email, id, up))
-        d.vote(self.email, id, up)
+        self.db.vote(self.email, id, up)
 
     def on_kill(self, id):
-        self.log('Kill {0} ({2}) from {1}'.format(id, self.email, d.get_song_from_queue(id).get('user')))
-        d.kill_song(id, self.email)
+        self.log('Kill {0} ({2}) from {1}'.format(id, self.email, self.db.get_song_from_queue(id).get('user')))
+        self.db.kill_song(id, self.email)
 
     def on_kill_playing(self):
-        self.log('Kill playing ({1}) from {0}'.format(self.email, d.get_now_playing().get('user')))
-        d.kill_playing(self.email)
+        self.log('Kill playing ({1}) from {0}'.format(self.email, self.db.get_now_playing().get('user')))
+        self.db.kill_playing(self.email)
 
     def on_nuke_queue(self):
         self.log('Queue nuke from {0}'.format(self.email))
-        d.nuke_queue(self.email)
+        self.db.nuke_queue(self.email)
 
     def on_airhorn(self, name):
         self.log('Airhorn {0}, {1}'.format(self.email, name))
-        d.airhorn(self.email, name=name)
+        self.db.airhorn(self.email, name=name)
 
     def on_free_airhorn(self):
         self.log('Free Airhorn {0}'.format(self.email))
-        d.free_airhorn(self.email)
+        self.db.free_airhorn(self.email)
 
     # def on_add_playlist(self, key, shuffled):
     #     self.log('Add playlist from {0} {1}'.format(self.email, key))
@@ -417,33 +456,33 @@ class MusicNamespace(WebSocketManager):
 
     def on_jam(self, id):
         self.log('{0} jammed {1}'.format(self.email, id))
-        d.jam(id, self.email)
+        self.db.jam(id, self.email)
 
     def on_benderQueue(self, id):
         self.log('{0} benderqueues {1}'.format(self.email, id))
-        d.benderqueue(id, self.email)
+        self.db.benderqueue(id, self.email)
 
     def on_benderFilter(self, id):
         self.log('{0} benderfilters {1}'.format(self.email, id))
-        d.benderfilter(id, self.email)
+        self.db.benderfilter(id, self.email)
 
     def on_get_free_horns(self):
-        self.emit('free_horns', d.get_free_horns(self.email))
+        self.emit('free_horns', self.db.get_free_horns(self.email))
 
     def on_pause(self):
         self.log('Pause button! {0}'.format(self.email))
-        d.pause(self.email)
+        self.db.pause(self.email)
 
     def on_unpause(self):
         self.log('Unpause button! {0}'.format(self.email))
-        d.unpause(self.email)
+        self.db.unpause(self.email)
 
     def on_add_comment(self, song_id, user_id, comment):
         self.log("Add comment from {}!".format(user_id))
-        d.add_comment(song_id, user_id, comment)
+        self.db.add_comment(song_id, user_id, comment)
 
     def on_get_comments_for_song(self, song_id):
-        comments = d.get_comments(song_id)
+        comments = self.db.get_comments(song_id)
         self.emit('comments_for_song', song_id, comments)
 
     def on_loaded_airhorn(self, name):
