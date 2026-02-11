@@ -459,25 +459,37 @@ class MusicNamespace(WebSocketManager):
         else:
             self.logger.info(msg)
 
+    def _safe_db_call(self, fn, *args, **kwargs):
+        """Call a DB method, catching RuntimeError if the nest is being deleted."""
+        try:
+            return fn(*args, **kwargs)
+        except RuntimeError as e:
+            if "being deleted" in str(e):
+                self.emit('error', {'message': 'This nest is being deleted'})
+                return None
+            raise
+
     def on_request_volume(self):
         self.emit('volume', str(self.db.get_volume()))
 
     def on_change_volume(self, vol):
-        self.emit('volume', str(self.db.set_volume(vol)))
+        result = self._safe_db_call(self.db.set_volume, vol)
+        if result is not None:
+            self.emit('volume', str(result))
 
     def on_add_song(self, song_id, src):
         logger.info('on_add_song called: song_id=%s, src=%s, email=%s', song_id, src, self.email)
         if src == 'spotify':
             self.log(
                 'add_spotify_song "{0}" "{1}"'.format(self.email, song_id))
-            self.db.add_spotify_song(self.email, song_id, penalty=self.penalty)
+            self._safe_db_call(self.db.add_spotify_song, self.email, song_id, penalty=self.penalty)
         elif src == 'youtube':
             logger.info('Adding YouTube song: %s for user %s', song_id, self.email)
-            self.db.add_youtube_song(self.email, song_id, penalty=self.penalty)
+            self._safe_db_call(self.db.add_youtube_song, self.email, song_id, penalty=self.penalty)
         elif src == 'soundcloud':
             self.log(
                 'add_soundcloud_song "{0}" "{1}"'.format(self.email, song_id))
-            self.db.add_soundcloud_song(self.email, song_id, penalty=self.penalty)
+            self._safe_db_call(self.db.add_soundcloud_song, self.email, song_id, penalty=self.penalty)
 
     def on_fetch_playlist(self):
         self.emit('playlist_update', self.db.get_queued())
@@ -519,7 +531,7 @@ class MusicNamespace(WebSocketManager):
 
     def on_vote(self, id, up):
         self.log('Vote from {0} on {1} {2}'.format(self.email, id, up))
-        self.db.vote(self.email, id, up)
+        self._safe_db_call(self.db.vote, self.email, id, up)
 
     def on_kill(self, id):
         self.log('Kill {0} ({2}) from {1}'.format(id, self.email, self.db.get_song_from_queue(id).get('user')))

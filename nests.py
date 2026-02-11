@@ -68,6 +68,16 @@ def member_key(nest_id, email):
     return f"NEST:{nest_id}|MEMBER:{email}"
 
 
+def deleting_key(nest_id):
+    """Return the Redis key for the nest deletion-in-progress flag."""
+    return f"NEST:{nest_id}|DELETING"
+
+
+def is_nest_deleting(redis_client, nest_id):
+    """Check whether a nest is currently being deleted."""
+    return redis_client.exists(deleting_key(nest_id)) == 1
+
+
 def refresh_member_ttl(redis_client, nest_id, email, ttl_seconds=90):
     """Set/refresh a member's heartbeat TTL key.
 
@@ -279,12 +289,18 @@ class NestManager:
     def delete_nest(self, nest_id):
         """Delete a nest and all its Redis keys.
 
+        Sets a DELETING flag (30s TTL) to prevent writes during cleanup,
+        then removes all nest keys using non-blocking unlink().
+
         Args:
             nest_id: The nest to delete
         """
         if nest_id == "main":
             logger.warning("Attempted to delete main nest — ignoring")
             return
+
+        # Set DELETING flag with 30s TTL (auto-expires on crash)
+        self._r.setex(deleting_key(nest_id), 30, "1")
 
         # Get metadata to find the code
         raw = self._r.hget(_REGISTRY_KEY, nest_id)
@@ -299,15 +315,18 @@ class NestManager:
         # Remove from registry
         self._r.hdel(_REGISTRY_KEY, nest_id)
 
-        # SCAN and delete all NEST:{nest_id}|* keys
+        # SCAN and unlink all NEST:{nest_id}|* keys (non-blocking)
         prefix = _nest_prefix(nest_id)
         cursor = 0
         while True:
             cursor, keys = self._r.scan(cursor, match=f"{prefix}*", count=200)
             if keys:
-                self._r.delete(*keys)
+                self._r.unlink(*keys)
             if cursor == 0:
                 break
+
+        # Clean up the DELETING flag itself
+        self._r.delete(deleting_key(nest_id))
 
     def touch_nest(self, nest_id):
         """Update the last_activity timestamp for a nest."""

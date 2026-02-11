@@ -230,6 +230,14 @@ class DB(object):
         """Prefix a Redis key with the nest namespace."""
         return f"NEST:{self.nest_id}|{key}"
 
+    def _check_nest_active(self):
+        """Raise RuntimeError if this nest is being deleted. Skips check for main."""
+        if self.nest_id == "main":
+            return
+        from nests import is_nest_deleting
+        if is_nest_deleting(self._r, self.nest_id):
+            raise RuntimeError("Nest is being deleted")
+
     def big_scrobble(self, email, tid):
         #add played song to FILTER "set"
         self._r.setex(self._key("FILTER|%s"% tid), CONF.BENDER_FILTER_TIME, 1)
@@ -913,6 +921,7 @@ class DB(object):
         return 'http://www.gravatar.com/avatar/{0}?d=monsterid&s=180'.format(grav)
 
     def _add_song(self, userid, song, force_first, penalty=0):
+        self._check_nest_active()
         id = self._r.incr(self._key('MISC|playlist-plays'))
 
         song.update(dict(background_color='222222',
@@ -1475,6 +1484,7 @@ class DB(object):
         return self._r.lrange(self._key('AIRHORNS'), 0, -1)
 
     def vote(self, userid, id, up):
+        self._check_nest_active()
         norm_color = [34, 34, 34]
         base_hot = [34, 34, 34]
         hot_color = [68, 68, 68]
@@ -1567,10 +1577,12 @@ class DB(object):
         self._r.set(self._key('MISC|force-jump'), 1)
 
     def pause(self, email):
+        self._check_nest_active()
         self._r.set(self._key('MISC|paused'), 1)
         self._msg('now_playing_update')
 
     def unpause(self, email):
+        self._check_nest_active()
         self._r.delete(self._key('MISC|paused'))
         # If the song timer expired while paused, clear stale now-playing
         # so the player loop advances to the next track immediately.
@@ -1649,6 +1661,7 @@ class DB(object):
         return rv
 
     def set_volume(self, new_vol):
+        self._check_nest_active()
         new_vol = max(0, int(new_vol))
 #        print new_vol
         new_vol = min(100, new_vol)

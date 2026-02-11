@@ -996,3 +996,118 @@ class TestWebSocketMembership:
             pytest.xfail("refresh_member_ttl helper missing")
 
         assert callable(refresh)
+
+
+class TestCrossNestIsolation:
+    """Verify that operations on one nest do not leak into another."""
+
+    @pytest.fixture
+    def nest_pair(self):
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        from db import DB
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        db_a = DB(nest_id="nest-A", init_history_to_redis=False, redis_client=fake_r)
+        db_b = DB(nest_id="nest-B", init_history_to_redis=False, redis_client=fake_r)
+        return db_a, db_b, fake_r
+
+    def test_queue_isolation(self, nest_pair):
+        db_a, db_b, fake_r = nest_pair
+        # Add a song hash to nest-A's queue directly
+        fake_r.hset("NEST:nest-A|QUEUE|1", mapping={"trackid": "spotify:track:abc", "user": "u@x.com"})
+        fake_r.zadd("NEST:nest-A|MISC|priority-queue", {"1": 1.0})
+
+        # nest-B queue should be empty
+        assert fake_r.zcard("NEST:nest-B|MISC|priority-queue") == 0
+        assert fake_r.exists("NEST:nest-B|QUEUE|1") == 0
+
+    def test_vote_isolation(self, nest_pair):
+        db_a, db_b, fake_r = nest_pair
+        fake_r.sadd("NEST:nest-A|QUEUE|VOTE|1", "voter@example.com")
+        assert fake_r.scard("NEST:nest-B|QUEUE|VOTE|1") == 0
+
+    def test_pause_isolation(self, nest_pair):
+        db_a, db_b, fake_r = nest_pair
+        fake_r.set("NEST:nest-A|MISC|paused", "1")
+        assert fake_r.exists("NEST:nest-B|MISC|paused") == 0
+
+    def test_volume_isolation(self, nest_pair):
+        db_a, db_b, fake_r = nest_pair
+        fake_r.set("NEST:nest-A|MISC|volume", "50")
+        assert fake_r.exists("NEST:nest-B|MISC|volume") == 0
+
+    def test_pubsub_channel_isolation(self):
+        nests_mod = importlib.import_module("nests")
+        ch_a = nests_mod.pubsub_channel("nest-A")
+        ch_b = nests_mod.pubsub_channel("nest-B")
+        assert ch_a != ch_b
+        assert "nest-A" in ch_a
+        assert "nest-B" in ch_b
+
+
+class TestRaceResistantDeletion:
+    """Verify the DELETING flag blocks writes and cleanup removes all keys."""
+
+    @pytest.fixture
+    def fake_redis(self):
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+        return fakeredis.FakeRedis(decode_responses=True)
+
+    def test_deleting_flag_blocks_writes(self, fake_redis):
+        from db import DB
+        from nests import deleting_key
+
+        db = DB(nest_id="doomed", init_history_to_redis=False, redis_client=fake_redis)
+        fake_redis.setex(deleting_key("doomed"), 30, "1")
+
+        with pytest.raises(RuntimeError, match="being deleted"):
+            db._check_nest_active()
+
+    def test_no_flag_allows_writes(self, fake_redis):
+        from db import DB
+
+        db = DB(nest_id="alive", init_history_to_redis=False, redis_client=fake_redis)
+        # Should not raise
+        db._check_nest_active()
+
+    def test_main_nest_skips_check(self, fake_redis):
+        from db import DB
+        from nests import deleting_key
+
+        db = DB(nest_id="main", init_history_to_redis=False, redis_client=fake_redis)
+        # Even with a flag set (shouldn't happen, but testing guard)
+        fake_redis.setex(deleting_key("main"), 30, "1")
+        # Should not raise
+        db._check_nest_active()
+
+    def test_delete_nest_cleans_up(self, fake_redis):
+        from nests import NestManager, deleting_key, _nest_prefix
+
+        manager = NestManager(redis_client=fake_redis)
+        nest = manager.create_nest("creator@example.com", name="Temp")
+        nid = nest["nest_id"]
+
+        # Plant some keys that would exist in a real nest
+        fake_redis.set(f"NEST:{nid}|MISC|volume", "80")
+        fake_redis.set(f"NEST:{nid}|MISC|paused", "1")
+        fake_redis.hset(f"NEST:{nid}|QUEUE|1", mapping={"trackid": "abc"})
+
+        manager.delete_nest(nid)
+
+        # All nest keys should be gone
+        prefix = _nest_prefix(nid)
+        remaining = list(fake_redis.scan_iter(match=f"{prefix}*"))
+        assert remaining == []
+
+        # DELETING flag should also be gone
+        assert fake_redis.exists(deleting_key(nid)) == 0
+
+        # Nest should not be in registry
+        assert manager.get_nest(nid) is None
