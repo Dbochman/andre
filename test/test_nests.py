@@ -751,7 +751,6 @@ class TestMasterPlayerMultiNest:
         assert callable(helper)
 
 
-@pytest.mark.xfail(reason="NestManager CRUD not implemented yet")
 class TestNestManagerCRUD:
     def test_create_get_list_delete(self):
         try:
@@ -764,22 +763,78 @@ class TestNestManagerCRUD:
             pytest.xfail("NestManager missing")
 
         try:
-            manager = manager_cls()
-        except Exception as e:
-            pytest.xfail(f"NestManager init failed: {e}")
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
 
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = manager_cls(redis_client=fake_r)
+
+        # Create
         nest = manager.create_nest("creator@example.com", name="Friday Vibes")
         assert "code" in nest
+        assert nest["name"] == "Friday Vibes"
+        assert nest["creator"] == "creator@example.com"
+        assert nest["is_main"] is False
 
+        # Get by nest_id (which is the code)
         fetched = manager.get_nest(nest["code"])
         assert fetched is not None
+        assert fetched["name"] == "Friday Vibes"
 
+        # List — main nest should exist (created by _ensure_main_nest)
         nests_list = manager.list_nests()
         assert isinstance(nests_list, list)
-        # Expect main nest to exist in listings
         assert any(nid == "main" for nid, _meta in nests_list)
+        # The new nest should also appear
+        assert any(nid == nest["nest_id"] for nid, _meta in nests_list)
 
+        # Delete
         manager.delete_nest(nest["code"])
+        assert manager.get_nest(nest["code"]) is None
+
+    def test_join_and_leave(self):
+        nests = importlib.import_module("nests")
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = nests.NestManager(redis_client=fake_r)
+
+        nest = manager.create_nest("host@example.com")
+        code = nest["code"]
+
+        # Join
+        manager.join_nest(code, "user1@example.com")
+        members = fake_r.smembers(nests.members_key(code))
+        assert "user1@example.com" in members
+
+        # Leave
+        manager.leave_nest(code, "user1@example.com")
+        members = fake_r.smembers(nests.members_key(code))
+        assert "user1@example.com" not in members
+
+    def test_generate_code_uniqueness(self):
+        nests = importlib.import_module("nests")
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = nests.NestManager(redis_client=fake_r)
+
+        codes = set()
+        for _ in range(20):
+            codes.add(manager.generate_code())
+        # All 20 codes should be unique
+        assert len(codes) == 20
+        # All codes should use only valid characters
+        for code in codes:
+            assert len(code) == 5
+            assert all(c in nests.CODE_CHARS for c in code)
 
 
 @pytest.mark.xfail(reason="Migration script not implemented yet")
