@@ -4,12 +4,66 @@ Ordered list of tasks for the overnight implementation run.
 Each task should result in a granular git commit.
 Run tests after each task to verify no regressions.
 
+## Test File Reference
+
+All contract tests live in `test/test_nests.py` (from `feature/nests-tests` branch, already merged).
+Tests are marked `@pytest.mark.xfail` and will pass once implementation lands.
+
+```bash
+# Run all nest tests (expect xfail until implemented)
+SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py -v
+
+# Run a specific class
+SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestRedisKeyPrefixing -v
+```
+
+### Test Class → Task Mapping
+
+| Test Class | File Location | Relevant Task(s) | Phase |
+|---|---|---|---|
+| `TestRedisKeyPrefixing` | `test/test_nests.py:610` | T1, T2 | 1 |
+| `TestMigrationHelpers` | `test/test_nests.py:660` | T3 | 1 |
+| `TestPubSubChannels` | `test/test_nests.py:679` | T4 | 1 |
+| `TestNestCleanupLogic` | `test/test_nests.py:627` | T10 | 2 |
+| `TestMembershipHeartbeat` | `test/test_nests.py:644` | T6, T9 | 2 |
+| `TestMasterPlayerMultiNest` | `test/test_nests.py:692` | T10 | 2 |
+| `TestNestsAPI` | `test/test_nests.py:16` | T7, T8 | 2 |
+| `TestNestsAdminAPI` | `test/test_nests.py:224` | Phase 5 (future) |
+| `TestBillingAPI` | `test/test_nests.py:315` | Phase 5 (future) |
+| `TestSuperAdminAPI` | `test/test_nests.py:420` | Phase 5 (future) |
+| `TestEntitlementGates` | `test/test_nests.py:474` | Phase 5 (future) |
+| `TestAuditLogs` | `test/test_nests.py:530` | Phase 5 (future) |
+| `TestInviteOnly` | `test/test_nests.py:557` | Phase 5 (future) |
+| `TestFreeCap` | `test/test_nests.py:587` | Phase 5 (future) |
+
+### MVP-Relevant Tests (must pass by end of overnight run)
+
+These are the test classes that should flip from `xfail` to passing:
+
+1. **`TestRedisKeyPrefixing`** — `DB._key()` returns correct prefixed keys
+2. **`TestMigrationHelpers`** — `legacy_key_mapping` dict maps old→new keys
+3. **`TestPubSubChannels`** — `pubsub_channel()` helper returns nest-scoped channel
+4. **`TestNestCleanupLogic`** — `should_delete_nest()` predicate logic
+5. **`TestMembershipHeartbeat`** — `member_key()` and `members_key()` helpers
+6. **`TestMasterPlayerMultiNest`** — `master_player_tick_all()` callable exists
+7. **`TestNestsAPI`** — CRUD routes return correct status codes and shapes
+
+### Future Tests (should remain xfail for now)
+
+- `TestNestsAdminAPI` — Admin console (Phase 5)
+- `TestBillingAPI` — Stripe integration (Phase 5)
+- `TestSuperAdminAPI` — Internal ops (Phase 5)
+- `TestEntitlementGates` — Feature gating (Phase 5)
+- `TestAuditLogs` — Audit trail (Phase 5)
+- `TestInviteOnly` — Private nests (Phase 5)
+- `TestFreeCap` — Free tier limits (Phase 5)
+
 ---
 
 ## Pre-flight
 
-- [ ] **T0: Merge Codex test branch** — Cherry-pick or merge the test files from Codex's branch into `feature/nests`. Verify tests exist and fail (since implementation doesn't exist yet).
-- [ ] **T0.1: Add fakeredis to requirements.txt** — `fakeredis>=2.0`
+- [x] **T0: Merge Codex test branch** — `test/test_nests.py` already on `feature/nests` (shared history with `feature/nests-tests`).
+- [ ] **T0.1: Add fakeredis to requirements.txt** — `fakeredis>=2.0` (if not already present — check first)
 
 ---
 
@@ -23,7 +77,8 @@ Run tests after each task to verify no regressions.
 - Add `_key(self, key)` method that returns `f"NEST:{self.nest_id}|{key}"`
 - Store `self.nest_id` as instance attribute
 **Commit:** `feat(nests): add _key() method and nest_id to DB class`
-**Tests:** `test_nests_db.py::TestDBKeyMethod`
+**Verify:** `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestRedisKeyPrefixing -v`
+- `test_db_key_prefixing` — asserts `DB(nest_id="X7K2P")._key("MISC|now-playing") == "NEST:X7K2P|MISC|now-playing"`
 
 ### T2: Refactor all Redis key references in DB class to use `_key()`
 **File:** `db.py`
@@ -35,20 +90,29 @@ Run tests after each task to verify no regressions.
 - Be methodical: search for all `self._r.get(`, `self._r.set(`, `self._r.hget(`, `self._r.hset(`, `self._r.zadd(`, `self._r.zrem(`, `self._r.delete(`, `self._r.setnx(`, `self._r.expire(`, `self._r.publish(`, etc.
 - The pub/sub channel `MISC|update-pubsub` MUST be wrapped so each nest gets its own channel
 **Commit:** `feat(nests): scope all DB Redis keys to nest_id via _key()`
-**Tests:** `test_nests_db.py::TestDBNestIsolation`, `test_nests_db.py::TestDBBackwardCompatibility`
+**Verify:** `TestRedisKeyPrefixing` should still pass. Also run existing tests to check for regressions.
 
-### T3: Write key migration script
-**File:** `migrate_keys.py` (new)
+### T3: Write key migration script + helpers module
+**Files:** `migrate_keys.py` (new), `nests.py` (new — helper functions)
 **Changes:**
-- Script that connects to Redis and renames all existing keys to `NEST:main|` prefix
-- Handle different key types: strings, hashes, sorted sets, lists, sets
-- Use `SCAN` to find all keys matching known prefixes (`MISC|*`, `QUEUE|*`, `FILTER|*`, `BENDER|*`)
-- Use `RENAME` for each key
-- Idempotent: skip keys that already have `NEST:` prefix
-- Dry-run mode (print what would be renamed)
-- Log output for verification
-**Commit:** `feat(nests): add key migration script for existing Redis data`
-**Tests:** `test_nests_migration.py::TestKeyMigration`
+- `nests.py` module with helper functions that the tests expect:
+  - `legacy_key_mapping` — dict mapping old keys to `NEST:main|`-prefixed keys
+  - `pubsub_channel(nest_id)` — returns `f"NEST:{nest_id}|MISC|update-pubsub"`
+  - `members_key(nest_id)` — returns `f"NEST:{nest_id}|MEMBERS"`
+  - `member_key(nest_id, email)` — returns `f"NEST:{nest_id}|MEMBER:{email}"`
+  - `should_delete_nest(metadata, members, queue_size, now)` — cleanup predicate
+- `migrate_keys.py` script that:
+  - Connects to Redis and renames all existing keys to `NEST:main|` prefix
+  - Uses `SCAN` to find keys matching known prefixes (`MISC|*`, `QUEUE|*`, `FILTER|*`, `BENDER|*`)
+  - Uses `RENAME` for each key
+  - Idempotent: skip keys that already have `NEST:` prefix
+  - Dry-run mode flag
+**Commit:** `feat(nests): add nests helpers module and key migration script`
+**Verify:**
+- `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestMigrationHelpers -v`
+- `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestPubSubChannels -v`
+- `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestMembershipHeartbeat -v`
+- `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestNestCleanupLogic -v`
 
 ### T4: Update pub/sub subscription in app.py
 **File:** `app.py`
@@ -57,8 +121,9 @@ Run tests after each task to verify no regressions.
 - `VolumeNamespace.listener()` same change
 - SSE endpoint `/api/events` same change
 - For now, all use "main" as nest_id (nest routing comes in Phase 2)
+- Can import `pubsub_channel` from `nests.py` module
 **Commit:** `feat(nests): scope pub/sub channels to nest_id`
-**Tests:** Run existing tests to verify no regressions
+**Verify:** Run existing tests to verify no regressions
 
 ### T5: Add nest config options
 **Files:** `config.yaml`, `config.py`
@@ -74,7 +139,7 @@ Run tests after each task to verify no regressions.
   ```
 - Add to `ENV_OVERRIDES` in `config.py`: `'NESTS_ENABLED'`
 **Commit:** `feat(nests): add nest configuration options`
-**Tests:** Verify config loads correctly
+**Verify:** Verify config loads correctly
 
 ---
 
@@ -95,30 +160,35 @@ Run tests after each task to verify no regressions.
 - Initialize main nest in registry on first run if not present
 - Accept optional `redis_client` for test injection
 **Commit:** `feat(nests): add NestManager class with CRUD operations`
-**Tests:** `test_nests_manager.py` (all classes)
+**Verify:** `TestMembershipHeartbeat` should pass (uses `members_key`/`member_key` from `nests.py`)
 
 ### T7: Add nest API routes
 **File:** `app.py`
 **Changes:**
 - Import `NestManager`, instantiate alongside DB
-- `POST /api/nests` — create nest (requires authenticated session)
-- `GET /api/nests` — list active nests (public or authenticated, TBD)
+- `POST /api/nests` — create nest (requires authenticated session or API token)
+- `GET /api/nests` — list active nests
 - `GET /api/nests/<code>` — get nest info
 - `PATCH /api/nests/<code>` — update nest (creator only)
 - `DELETE /api/nests/<code>` — delete nest (creator only)
 - Add `/api/nests` to `SAFE_PARAM_PATHS` (token auth or session auth)
 - Return proper JSON responses with status codes
 **Commit:** `feat(nests): add REST API routes for nest CRUD`
-**Tests:** `test_nests_api.py`
+**Verify:** `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestNestsAPI -v`
+- `test_create_nest_returns_code` — POST /api/nests → 200 with `code` (5 chars)
+- `test_get_nest_info` — GET /api/nests/{code} → 200 or 404
+- `test_patch_nest_name` — PATCH /api/nests/{code} → 200/403/404
+- `test_create_nest_free_cap_error_shape` — if 403/429, error body has `nest_limit_reached`
+- `test_rate_limit_shape` — if 429, error has correct shape
 
 ### T8: Add `/nest/<code>` page route
 **File:** `app.py`
 **Changes:**
 - `GET /nest/<code>` — look up nest, render `main.html` with `nest_id` in template context
 - Return 404 if nest doesn't exist
-- Add `/nest/` to `SAFE_PARAM_PATHS` (auth still required via session)
+- Add `/nest/` to `SAFE_PARAM_PATHS`
 **Commit:** `feat(nests): add /nest/<code> page route`
-**Tests:** `test_nests_api.py::TestNestRoute`
+**Verify:** Part of `TestNestsAPI` tests
 
 ### T9: WebSocket nest routing
 **File:** `app.py`
@@ -132,29 +202,34 @@ Run tests after each task to verify no regressions.
 - On disconnect (in `serve()` finally block): `nest_manager.leave_nest(nest_id, email)`
 - Update `nest_manager.touch_nest(nest_id)` on queue operations
 **Commit:** `feat(nests): route WebSocket connections to specific nests`
-**Tests:** `test_nests_websocket.py`
+**Verify:** Hard to test via pytest (WebSocket mocking). Verify manually if possible.
 
 ### T10: Add nest cleanup to master_player
-**File:** `master_player.py`, `db.py`
+**Files:** `master_player.py`, `db.py`
 **Changes:**
 - Refactor `master_player()` loop to iterate over all active nests
 - Extract single-iteration logic into `_master_player_tick()` method
+- Add `master_player_tick_all()` function (the test expects this to be callable)
 - Add `nest_cleanup_loop()` that runs alongside master_player
-- Cleanup checks: `last_activity` past TTL + no members + empty queue → delete
+- Cleanup uses `should_delete_nest()` from `nests.py` module
 - Skip main nest
 **Commit:** `feat(nests): add multi-nest master player and cleanup worker`
-**Tests:** `test_nests_cleanup.py`
+**Verify:**
+- `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestNestCleanupLogic -v`
+- `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestMasterPlayerMultiNest -v`
+  - `test_master_player_iterates_nests` — asserts `master_player_tick_all` is callable
 
 ---
 
 ## Phase 3: Nest Frontend
 
 ### T11: Pass nest_id to frontend template
-**File:** `templates/main.html`, `templates/config.js` (if exists), `app.py`
+**Files:** `templates/main.html`, `templates/config.js` (if exists), `app.py`
 **Changes:**
 - Pass `nest_id` and `nest_info` (name, code, is_main) to template context
 - Make it available to JavaScript (e.g., `window.NEST_ID`, `window.NEST_INFO`)
 **Commit:** `feat(nests): pass nest context to frontend templates`
+**Verify:** No specific Codex test. Verify template renders correctly.
 
 ### T12: Update WebSocket connection to use nest_id
 **File:** `static/js/app.js`
@@ -163,9 +238,10 @@ Run tests after each task to verify no regressions.
 - Connect to `/socket/{nest_id}` instead of `/socket`
 - Keep backward compatible: if `NEST_ID` is "main" or undefined, connect to `/socket`
 **Commit:** `feat(nests): connect WebSocket to nest-specific endpoint`
+**Verify:** No specific Codex test. Verify WebSocket connects.
 
 ### T13: Add nest bar UI
-**File:** `templates/main.html`, `static/css/app.css`, `static/js/app.js`
+**Files:** `templates/main.html`, `static/css/app.css`, `static/js/app.js`
 **Changes:**
 - Add a nest bar above the main content area
 - When in Main Nest: show subtle "Build a Nest" button + "Join a Nest" input
@@ -175,15 +251,17 @@ Run tests after each task to verify no regressions.
 - "Share Nest" copies `echone.st/{code}` (or full URL if domain not configured) to clipboard
 - Style it to work with the existing 9-theme system
 **Commit:** `feat(nests): add nest bar UI with create/join flows`
+**Verify:** No specific Codex test. Visual inspection needed.
 
 ### T14: Show listener count
-**File:** `static/js/app.js`, `app.py` (or via WebSocket)
+**Files:** `static/js/app.js`, `app.py` (or via WebSocket)
 **Changes:**
 - Display number of listeners in the nest bar
 - Option A: Fetch from `GET /api/nests/{code}` periodically
 - Option B: Broadcast listener count changes via pub/sub (preferred for real-time)
 - Add a `member_update` pub/sub message type when membership changes
 **Commit:** `feat(nests): show real-time listener count in nest bar`
+**Verify:** No specific Codex test. Verify count updates.
 
 ---
 
@@ -193,6 +271,34 @@ Run tests after each task to verify no regressions.
 - [ ] **T16: Test manually** (if possible — start dev server, create/join nests)
 - [ ] **T17: Update CHANGELOG.md** — Add Nests feature entry
 - [ ] **T18: Review decision log** — Ensure all decisions are documented
+
+---
+
+## Expected Test Results After Full MVP
+
+```bash
+SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py -v
+```
+
+**Should PASS (no longer xfail):**
+- `TestRedisKeyPrefixing::test_db_key_prefixing`
+- `TestMigrationHelpers::test_legacy_key_rename_map`
+- `TestPubSubChannels::test_pubsub_channel_key`
+- `TestNestCleanupLogic::test_should_delete_nest_predicate`
+- `TestMembershipHeartbeat::test_member_key_helpers`
+- `TestMasterPlayerMultiNest::test_master_player_iterates_nests`
+- `TestNestsAPI::*` (all API contract tests)
+
+**Should remain XFAIL (future phases):**
+- `TestNestsAdminAPI::*`
+- `TestBillingAPI::*`
+- `TestSuperAdminAPI::*`
+- `TestEntitlementGates::*`
+- `TestAuditLogs::*`
+- `TestInviteOnly::*`
+- `TestFreeCap::*`
+
+**Important:** When a test class is implemented and should pass, remove the `@pytest.mark.xfail` decorator from that class. Leave xfail on future-phase classes.
 
 ---
 
@@ -215,3 +321,4 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 2. **pub/sub channel scoping (T4)** — If the channel name doesn't match between publisher (db.py) and subscriber (app.py), real-time updates break silently.
 3. **WebSocket disconnect handling (T9)** — Must reliably call `leave_nest` even on abnormal disconnects. The `finally` block in `serve()` is the right place.
 4. **master_player multi-nest (T10)** — The lock mechanism (`MISC|master-player` via `setnx`) needs to be per-nest: `NEST:{id}|MISC|master-player`.
+5. **nests.py module name (T3)** — Tests import `nests` module via `importlib.import_module("nests")`. The file MUST be named `nests.py` at the project root, not `nest_manager.py`. Either name the file `nests.py` or ensure `nest_manager.py` exports the expected helpers AND update the import in tests. **Recommended:** Create `nests.py` with the helper functions and keep `nest_manager.py` for the NestManager class, OR put everything in `nests.py`.
