@@ -51,7 +51,8 @@ server_tokens = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, 
 spotify_client = spotipy.client.Spotify(client_credentials_manager=server_tokens)
 
 auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
-auth.get_access_token()
+if not os.environ.get('SKIP_SPOTIFY_PREFETCH'):
+    auth.get_access_token()
 
 # SoundCloud OAuth token cache (shared across all uses)
 _soundcloud_token = None
@@ -191,15 +192,22 @@ class DB(object):
         'album': 'BENDER|cache:album',
     }
 
-    def __init__(self, init_history_to_redis=True):
-        logger.info('Creating DB object')
-        redis_host = CONF.REDIS_HOST or 'localhost'
-        redis_port = CONF.REDIS_PORT or 6379
-        redis_password = CONF.REDIS_PASSWORD or None
-        self._r = redis.StrictRedis(host=redis_host, port=redis_port, password=redis_password, decode_responses=True)
-        self._h = PlayHistory(self)
-        if init_history_to_redis:
-            self._h.init_history()
+    def __init__(self, init_history_to_redis=True, nest_id="main", redis_client=None):
+        logger.info('Creating DB object (nest_id=%s)', nest_id)
+        self.nest_id = nest_id
+        if redis_client is not None:
+            self._r = redis_client
+        else:
+            redis_host = CONF.REDIS_HOST or 'localhost'
+            redis_port = CONF.REDIS_PORT or 6379
+            redis_password = CONF.REDIS_PASSWORD or None
+            self._r = redis.StrictRedis(host=redis_host, port=redis_port, password=redis_password, decode_responses=True)
+        if redis_client is None:
+            self._h = PlayHistory(self)
+            if init_history_to_redis:
+                self._h.init_history()
+        else:
+            self._h = None
         self._oauth_token = None
         self._oauth_token_expires = datetime.datetime(2000,1,1,1)
         try:
@@ -210,6 +218,10 @@ class DB(object):
                 logger.info('Log directory already exists: %s' % CONF.LOG_DIR)
             else:
                 raise
+
+    def _key(self, key):
+        """Prefix a Redis key with the nest namespace."""
+        return f"NEST:{self.nest_id}|{key}"
 
     def big_scrobble(self, email, tid):
         #add played song to FILTER "set"

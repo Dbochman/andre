@@ -126,3 +126,11 @@ For async handoffs, use `docs/NESTS_HANDOFF_TEMPLATE.md`.
 **Decision:** All `nests.py` helpers that need Redis take an explicit `redis_client` parameter. Signature: `refresh_member_ttl(redis_client, nest_id, email, ttl_seconds=90)`. The caller (e.g., WebSocket serve loop) passes `db._r`.
 **Rationale:** Matches how `db.py` works (owns the connection, methods use `self._r`). Avoids hidden global state. Makes testing trivial (pass a fakeredis instance). Prevents divergence between async implementers who might each create their own Redis client strategy.
 **Alternatives:** Global `redis.Redis()` singleton in `nests.py` (hidden dependency, hard to test), connection created per-call (wasteful, connection pool exhaustion risk).
+
+---
+
+## D016: Guard module-level Spotify auth with SKIP_SPOTIFY_PREFETCH
+**Date:** 2026-02-11 (T1 implementation)
+**Context:** `db.py` calls `auth.get_access_token()` at module level (line 54). This fails when Spotify credentials are not configured (e.g., CI, local dev without creds). The `TestRedisKeyPrefixing` test catches the import failure and calls `pytest.xfail()`, meaning it can never transition from xfail to passing in environments without Spotify.
+**Decision:** Wrap the module-level `auth.get_access_token()` call with `if not os.environ.get('SKIP_SPOTIFY_PREFETCH')` guard. This allows `db.py` to import cleanly in test environments while preserving the eager token fetch in production.
+**Rationale:** The `SKIP_SPOTIFY_PREFETCH` env var is already the established pattern for test environments (used in Makefile, CI, all test commands). The eager token fetch is an optimization, not a correctness requirement -- the token will be fetched lazily on first API call regardless.
