@@ -163,7 +163,7 @@ These are the test classes that should flip from `xfail` to passing, grouped by 
 - Add to `config.yaml`:
   ```yaml
   NESTS_ENABLED: true
-  NEST_MAX_INACTIVE_MINUTES: 120
+  NEST_MAX_INACTIVE_MINUTES: 10
   NEST_MAX_ACTIVE: 20
   NEST_CODE_LENGTH: 5
   NEST_BENDER_DEFAULT: true

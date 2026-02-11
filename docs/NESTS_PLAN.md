@@ -423,7 +423,7 @@ New config options:
 ```yaml
 # Nests
 NESTS_ENABLED: true
-NEST_MAX_INACTIVE_MINUTES: 120    # Auto-delete after 2 hours of inactivity
+NEST_MAX_INACTIVE_MINUTES: 10     # Auto-delete after 10 minutes of inactivity
 NEST_MAX_ACTIVE: 20               # Max concurrent nests (prevents resource abuse)
 NEST_CODE_LENGTH: 5               # Characters in nest code
 NEST_BENDER_DEFAULT: true         # Whether Bender runs in new nests by default
