@@ -107,6 +107,7 @@ Server-side Spotify playback control via REST API. The `_get_spotify_client()` h
 
 **Plan:** See `docs/NESTS_PLAN.md` for full spec.
 **Decision Log:** See `docs/NESTS_DECISION_LOG.md` — append every judgment call here.
+**API Errors:** See `docs/NESTS_API_ERRORS.md` — canonical error response shapes.
 **Test Spec:** See `docs/NESTS_TEST_SPEC.md` (superseded — kept as reference). Canonical tests: `test/test_nests.py`.
 **Branch:** `feature/nests`
 

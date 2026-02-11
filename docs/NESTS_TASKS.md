@@ -10,11 +10,17 @@ All contract tests live in `test/test_nests.py` (from `feature/nests-tests` bran
 Tests are marked `@pytest.mark.xfail` and will pass once implementation lands.
 
 ```bash
-# Run all nest tests (expect xfail until implemented)
-SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py -v -rx
+# Run nest tests + regression suite (recommended after each task)
+make test-nests
+
+# Run just nest tests (quick check during a task)
+make test-quick
 
 # Run a specific class
 SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestRedisKeyPrefixing -v
+
+# Run full suite
+make test-all
 ```
 
 ### Test Class → Task Mapping
@@ -71,7 +77,9 @@ These are the test classes that should flip from `xfail` to passing:
 ## Pre-flight
 
 - [x] **T0: Merge Codex test branch** — `test/test_nests.py` already on `feature/nests` (shared history with `feature/nests-tests`).
+- [x] **T0.0: nests.py scaffold exists** — Codex created `nests.py` with `NotImplementedError` stubs for all helpers + `NestManager`. Tests can import without `ModuleNotFoundError`. Implementation replaces stubs with real logic.
 - [ ] **T0.1: Add fakeredis to requirements.txt** — `fakeredis>=2.0` (if not already present). Note: existing Codex contract tests in `test/test_nests.py` use Flask test client, not fakeredis. But `fakeredis` is needed for DB-level unit tests added during implementation.
+- [x] **T0.2: CI + Makefile** — `make test-nests` runs nest tests + regression suite. GitHub Actions on push to `feature/nests`.
 
 ---
 
@@ -102,10 +110,10 @@ These are the test classes that should flip from `xfail` to passing:
 **Verify:** `TestRedisKeyPrefixing` should still pass. Also run existing tests to check for regressions.
 **Done when:** all DB Redis ops are scoped via `_key()` (except global keys) and main-nest behavior remains unchanged.
 
-### T3: Write key migration script + helpers module
-**Files:** `migrate_keys.py` (new), `nests.py` (new — helper functions)
+### T3: Implement helpers in nests.py + write migration script
+**Files:** `migrate_keys.py` (new), `nests.py` (scaffold exists — replace stubs with real implementations)
 **Changes:**
-- `nests.py` module with helper functions that the tests expect:
+- `nests.py` — replace `NotImplementedError` stubs with real implementations:
   - `legacy_key_mapping` — dict mapping old keys to `NEST:main|`-prefixed keys
   - `pubsub_channel(nest_id)` — returns `f"NEST:{nest_id}|MISC|update-pubsub"`
   - `members_key(nest_id)` — returns `f"NEST:{nest_id}|MEMBERS"`
@@ -165,10 +173,10 @@ These are the test classes that should flip from `xfail` to passing:
 
 ## Phase 2: Nest Backend
 
-### T6: Create NestManager class
-**File:** `nests.py` (add NestManager to existing helpers module created in T3)
+### T6: Implement NestManager class
+**File:** `nests.py` (replace NestManager stub — scaffold already has the class shape)
 **Changes:**
-- `NestManager` class with Redis connection — add to `nests.py` so tests can import `nests.NestManager`
+- `NestManager` class with Redis connection — already stubbed in `nests.py`, replace `NotImplementedError` with real logic
 - `create_nest(creator_email, name=None)` → generates code, stores in `NESTS|registry`
 - `get_nest(nest_id)` → reads from registry
 - `list_nests()` → returns all nests with member counts
