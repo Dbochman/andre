@@ -429,6 +429,12 @@ class MusicNamespace(WebSocketManager):
                 self.emit('no_airhorn', json.loads(data))
             elif msg == 'update_freehorn':
                 self.emit('free_horns', self.db.get_free_horns(self.email))
+            elif msg.startswith('member_update|'):
+                _, count_str = msg.split('|', 1)
+                try:
+                    self.emit('member_update', int(count_str))
+                except (ValueError, TypeError):
+                    pass
 
     def log(self, msg, debug=True):
         if debug:

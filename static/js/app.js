@@ -1714,6 +1714,17 @@ function refresh_airhorns() {
 }
 
 // ---------------------------------------------------------------------------
+// Nest real-time listener count
+// ---------------------------------------------------------------------------
+
+socket.on('member_update', function(count) {
+    var $el = $('#nest-listener-num');
+    if ($el.length) {
+        $el.text(count);
+    }
+});
+
+// ---------------------------------------------------------------------------
 // Nest Bar interactions
 // ---------------------------------------------------------------------------
 
@@ -1867,6 +1878,18 @@ window.addEventListener('load', function(){
     $('#nest-build').on('click', nestBuild);
     $('#nest-join-form').on('submit', nestJoin);
     $('#nest-share').on('click', nestShare);
+
+    // Fetch initial listener count for temporary nests
+    if (!window.IS_MAIN_NEST && window.NEST_CODE) {
+        fetch('/api/nests/' + window.NEST_CODE, { credentials: 'same-origin' })
+            .then(function(resp) { return resp.ok ? resp.json() : null; })
+            .then(function(data) {
+                if (data && typeof data.member_count === 'number') {
+                    $('#nest-listener-num').text(data.member_count);
+                }
+            })
+            .catch(function() {});
+    }
 
     socket.emit('fetch_playlist');
     socket.emit('fetch_now_playing');

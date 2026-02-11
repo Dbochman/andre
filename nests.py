@@ -291,10 +291,11 @@ class NestManager:
                 pass
 
     def join_nest(self, nest_id, email):
-        """Add a member to a nest's MEMBERS set."""
+        """Add a member to a nest's MEMBERS set and broadcast update."""
         mkey = members_key(nest_id)
         self._r.sadd(mkey, email)
         self.touch_nest(nest_id)
+        self._broadcast_member_update(nest_id)
 
     def leave_nest(self, nest_id, email):
         """Remove a member from a nest's MEMBERS set and delete TTL key."""
@@ -303,6 +304,17 @@ class NestManager:
         # Also delete the member TTL key
         mk = member_key(nest_id, email)
         self._r.delete(mk)
+        self._broadcast_member_update(nest_id)
+
+    def _broadcast_member_update(self, nest_id):
+        """Publish member_update event with current count on the nest's pubsub channel."""
+        try:
+            mkey = members_key(nest_id)
+            count = self._r.scard(mkey)
+            channel = pubsub_channel(nest_id)
+            self._r.publish(channel, f"member_update|{count}")
+        except Exception:
+            logger.exception("Failed to broadcast member_update for nest %s", nest_id)
 
 
 # ---------------------------------------------------------------------------
