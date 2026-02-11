@@ -115,7 +115,7 @@ These are the test classes that should flip from `xfail` to passing, grouped by 
 
 ### T3: Implement pure helper functions in nests.py + write migration script
 **Files:** `migrate_keys.py` (new), `nests.py` (scaffold exists — replace stubs for helper functions only)
-**Scope:** Pure helper functions and migration. Do NOT implement `NestManager` or module-level `join_nest`/`leave_nest` wrappers — those come in T6.
+**Scope:** Helper functions and migration. Do NOT implement `NestManager` or module-level `join_nest`/`leave_nest` wrappers — those come in T6. Note: `refresh_member_ttl` may touch Redis; keep it a thin wrapper if you want T3 to stay low-risk.
 **Changes:**
 - `nests.py` — replace `NotImplementedError` stubs for these **pure helpers only**:
   - `legacy_key_mapping` — dict mapping old keys to `NEST:main|`-prefixed keys
