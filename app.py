@@ -535,23 +535,23 @@ class MusicNamespace(WebSocketManager):
 
     def on_kill(self, id):
         self.log('Kill {0} ({2}) from {1}'.format(id, self.email, self.db.get_song_from_queue(id).get('user')))
-        self.db.kill_song(id, self.email)
+        self._safe_db_call(self.db.kill_song, id, self.email)
 
     def on_kill_playing(self):
         self.log('Kill playing ({1}) from {0}'.format(self.email, self.db.get_now_playing().get('user')))
-        self.db.kill_playing(self.email)
+        self._safe_db_call(self.db.kill_playing, self.email)
 
     def on_nuke_queue(self):
         self.log('Queue nuke from {0}'.format(self.email))
-        self.db.nuke_queue(self.email)
+        self._safe_db_call(self.db.nuke_queue, self.email)
 
     def on_airhorn(self, name):
         self.log('Airhorn {0}, {1}'.format(self.email, name))
-        self.db.airhorn(self.email, name=name)
+        self._safe_db_call(self.db.airhorn, self.email, name=name)
 
     def on_free_airhorn(self):
         self.log('Free Airhorn {0}'.format(self.email))
-        self.db.free_airhorn(self.email)
+        self._safe_db_call(self.db.free_airhorn, self.email)
 
     # def on_add_playlist(self, key, shuffled):
     #     self.log('Add playlist from {0} {1}'.format(self.email, key))
@@ -563,30 +563,30 @@ class MusicNamespace(WebSocketManager):
 
     def on_jam(self, id):
         self.log('{0} jammed {1}'.format(self.email, id))
-        self.db.jam(id, self.email)
+        self._safe_db_call(self.db.jam, id, self.email)
 
     def on_benderQueue(self, id):
         self.log('{0} benderqueues {1}'.format(self.email, id))
-        self.db.benderqueue(id, self.email)
+        self._safe_db_call(self.db.benderqueue, id, self.email)
 
     def on_benderFilter(self, id):
         self.log('{0} benderfilters {1}'.format(self.email, id))
-        self.db.benderfilter(id, self.email)
+        self._safe_db_call(self.db.benderfilter, id, self.email)
 
     def on_get_free_horns(self):
         self.emit('free_horns', self.db.get_free_horns(self.email))
 
     def on_pause(self):
         self.log('Pause button! {0}'.format(self.email))
-        self.db.pause(self.email)
+        self._safe_db_call(self.db.pause, self.email)
 
     def on_unpause(self):
         self.log('Unpause button! {0}'.format(self.email))
-        self.db.unpause(self.email)
+        self._safe_db_call(self.db.unpause, self.email)
 
     def on_add_comment(self, song_id, user_id, comment):
         self.log("Add comment from {}!".format(user_id))
-        self.db.add_comment(song_id, user_id, comment)
+        self._safe_db_call(self.db.add_comment, song_id, user_id, comment)
 
     def on_get_comments_for_song(self, song_id):
         comments = self.db.get_comments(song_id)

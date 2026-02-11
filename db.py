@@ -1221,6 +1221,7 @@ class DB(object):
         return jammed
 
     def jam(self, id, userid):
+        self._check_nest_active()
         queued_song_jams_key = self._key('QUEUEJAM|{0}'.format(id))
         userid = userid.lower()
         if self.already_jammed(queued_song_jams_key, userid):
@@ -1240,6 +1241,7 @@ class DB(object):
 
 
     def add_comment(self, id, userid, text):
+        self._check_nest_active()
         comments_key = self._key('COMMENTS|{0}'.format(id))
         self._r.zadd(comments_key, {"{0}||{1}".format(userid.lower(), text): int(time.time())})
         self._r.expire(comments_key, 24*60*60)
@@ -1261,6 +1263,7 @@ class DB(object):
 
     def benderqueue(self, trackId, userid):
         """Queue the previewed Bender song (user clicked 'queue' on preview card)."""
+        self._check_nest_active()
         preview = self._r.hgetall(self._key('BENDER|next-preview'))
         if not preview or preview.get('trackid') != trackId:
             logger.warning("benderqueue mismatch: trackId=%s preview=%s", trackId, preview)
@@ -1281,6 +1284,7 @@ class DB(object):
 
     def benderfilter(self, trackId, userid):
         """Filter a Bender preview song and rotate to the next one."""
+        self._check_nest_active()
         preview = self._r.hgetall(self._key('BENDER|next-preview'))
 
         # Clean up preview/cache state if it matches the filtered track
@@ -1334,10 +1338,12 @@ class DB(object):
         self._r.expire(key, 24*60*60)
 
     def nuke_queue(self, email):
+        self._check_nest_active()
         self._r.zremrangebyrank(self._key('MISC|priority-queue'), 0, -1)
         self._msg('playlist_update')
 
     def kill_song(self, id, email):
+        self._check_nest_active()
         self._r.zrem(self._key('MISC|priority-queue'), id)
         self._msg('playlist_update')
 
@@ -1574,6 +1580,7 @@ class DB(object):
         self._msg('playlist_update')
 
     def kill_playing(self, email):
+        self._check_nest_active()
         self._r.set(self._key('MISC|force-jump'), 1)
 
     def pause(self, email):
@@ -1637,6 +1644,7 @@ class DB(object):
         self._msg('do_airhorn|0.4|%s' % name)  # volume of airhorn - may need to be tweaked, random choice for airhorn
 
     def airhorn(self, userid, name):
+        self._check_nest_active()
         self.trim_horns()
         horns = self.get_horns()
         if len([x for x in horns if not x['free']]) >= CONF.AIRHORN_MAX:
@@ -1644,6 +1652,7 @@ class DB(object):
         self._do_horn(userid, False, name)
 
     def free_airhorn(self, userid):
+        self._check_nest_active()
         self.trim_horns()
         s = self._r.spop(self._key('FREEHORN_{0}'.format(userid)))
         if s:
