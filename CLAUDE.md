@@ -103,6 +103,74 @@ Newer spotipy versions return dict from `get_access_token()`. Code handles both 
 ### Spotify Connect (Device Control)
 Server-side Spotify playback control via REST API. The `_get_spotify_client()` helper loads a cached OAuth token for `ANDRE_SPOTIFY_EMAIL` and returns a spotipy client. Endpoints: `/api/spotify/devices`, `/api/spotify/transfer`, `/api/spotify/status`. Requires OAuth scope `user-read-playback-state user-modify-playback-state` (added to all SpotifyOAuth constructors).
 
+## Nests Feature (In Progress)
+
+**Plan:** See `docs/NESTS_PLAN.md` for full spec.
+**Decision Log:** See `docs/NESTS_DECISION_LOG.md` — append every judgment call here.
+**Test Spec:** See `docs/NESTS_TEST_SPEC.md` — Codex writes tests, Claude verifies against them.
+**Branch:** `feature/nests`
+
+### What Are Nests?
+
+Nests are independent listening sessions (rooms) with shareable 5-character codes. The current single-queue becomes the permanent "Main Nest" (`nest_id="main"`). Temporary nests auto-cleanup after inactivity. Domain `echone.st` is registered for short links.
+
+### Architecture Summary
+
+**Core change:** All Redis keys are prefixed with `NEST:{nest_id}|` via a `_key()` method on the DB class. This means all existing business logic (queue, voting, Bender, etc.) works identically per-nest with no duplication.
+
+**Key files being modified:**
+- `db.py` — Add `nest_id` param, `_key()` method, refactor all Redis key references
+- `app.py` — Add nest API routes, modify WebSocket routing to accept `nest_id`
+- `master_player.py` — Iterate over all active nests instead of one queue
+- `config.py` — Add nest-related config options to `ENV_OVERRIDES`
+- `config.yaml` — Add default nest config values
+- `templates/main.html` — Pass `nest_id` to frontend
+- `static/js/app.js` — Use `nest_id` for WebSocket connection and API calls
+
+**New files:**
+- `nest_manager.py` — `NestManager` class for CRUD operations
+- `migrate_keys.py` — One-time migration script for existing Redis keys
+- `test/test_nests_*.py` — Test suite (written by Codex)
+
+### Redis Key Pattern
+
+```
+NEST:{nest_id}|MISC|now-playing
+NEST:{nest_id}|MISC|priority-queue
+NEST:{nest_id}|QUEUE|{song_id}
+NEST:{nest_id}|MEMBERS
+...etc (see docs/NESTS_PLAN.md for complete reference)
+```
+
+**Global keys (NOT nest-scoped):**
+- `MISC|spotify-rate-limited`
+- `NESTS|registry`
+
+### Implementation Phases
+
+1. **Phase 1 — Key Migration:** Add `_key()` to DB, refactor all key refs, migration script
+2. **Phase 2 — Nest Backend:** NestManager, API routes, WebSocket nest routing, cleanup worker
+3. **Phase 3 — Nest Frontend:** Nest bar UI, create/join flows, `/nest/{code}` route
+
+### Testing
+
+```bash
+# Run nest tests
+SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests_*.py -v
+
+# Run all tests (ensure no regressions)
+SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest -v
+```
+
+Tests use `fakeredis` for Redis isolation. DB class accepts optional `redis_client` param for test injection.
+
+### Decision Protocol
+
+When a judgment call is needed during implementation:
+1. Pick the simplest option that aligns with the plan
+2. Append the decision to `docs/NESTS_DECISION_LOG.md` with rationale
+3. Continue implementing
+
 ## Known Limitations
 
 1. Spotify recommendations API deprecated - workaround uses top tracks + album tracks
