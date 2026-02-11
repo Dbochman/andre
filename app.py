@@ -877,7 +877,9 @@ def queue_specific(id):
 
 @app.route('/')
 def main():
-    return render_template('main.html')
+    return render_template('main.html',
+                           nest_id='main', nest_code='main',
+                           nest_name='Main Nest', is_main_nest=True)
 
 
 @app.route('/nest/<code>')
@@ -888,8 +890,11 @@ def nest_page(code):
     nest = nest_manager.get_nest(code)
     if nest is None:
         return 'Nest not found', 404
-    return render_template('main.html', nest_id=nest.get('nest_id', code),
-                           nest_code=code, nest_name=nest.get('name', ''))
+    return render_template('main.html',
+                           nest_id=nest.get('nest_id', code),
+                           nest_code=code,
+                           nest_name=nest.get('name', ''),
+                           is_main_nest=False)
 
 
 @app.route('/socket/')

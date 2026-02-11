@@ -1,5 +1,11 @@
 {% extends "base.html"%}
 {% block body %}
+<script>
+    window.NEST_ID = "{{ nest_id }}";
+    window.NEST_CODE = "{{ nest_code }}";
+    window.NEST_NAME = "{{ nest_name }}";
+    window.IS_MAIN_NEST = {{ is_main_nest|tojson }};
+</script>
 <div id="page-container">
     <div id="body">
         <div id="left">
