@@ -75,3 +75,19 @@ Each entry documents what was decided, why, and any alternatives considered.
 **Context:** Admin UX section said "creators (and admins)" but decisions confirmed "creator-only."
 **Decision:** Admin/settings access is strictly creator-only, defined by `created_by` email.
 **Rationale:** No admin role system exists or is planned for MVP. Adding one would require a permissions model. Creator-only is simple and sufficient.
+
+---
+
+## D010: /nest/{code} pages require authentication (not public)
+**Date:** 2026-02-11 (pre-implementation review)
+**Context:** T8 originally said "Add `/nest/` to `SAFE_PARAM_PATHS`" which would bypass the Google auth gate and make nest pages publicly accessible.
+**Decision:** Do NOT add `/nest/` to `SAFE_PARAM_PATHS`. Nest pages require Google auth like all other pages.
+**Rationale:** The entire app requires Google OAuth login. Making nest pages public would be a major security model change — unauthenticated users could see queue contents, listener lists, etc. The flow is: `echone.st/X7K2P` → redirect → `/nest/X7K2P` → Google login → join nest. This is consistent and secure.
+
+---
+
+## D011: Plan key names corrected to match actual db.py
+**Date:** 2026-02-11 (pre-implementation review)
+**Context:** Plan listed `JAMS|{song_id}` and `AIRHORN|{user}` but db.py uses `QUEUEJAM|{song_id}`, `AIRHORNS`, and `FREEHORN_{userid}`.
+**Decision:** Updated plan's Redis key reference to match actual db.py key names. Added missing keys: `FILL-INFO|{trackid}`, `MEMBER:{email}`.
+**Rationale:** Migration and T2 refactor must use the real key names. Drift between plan and code causes silent data loss.

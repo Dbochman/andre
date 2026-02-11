@@ -446,9 +446,12 @@ NEST:{id}|BENDER|cache:album           → list
 NEST:{id}|BENDER|throwback-users       → hash (user attribution)
 NEST:{id}|BENDER|next-preview          → hash (next bender song preview)
 NEST:{id}|MEMBERS                      → set of connected user emails
-NEST:{id}|JAMS|{song_id}              → jam count
-NEST:{id}|COMMENTS|{song_id}          → list of comments
-NEST:{id}|AIRHORN|{user}              → airhorn rate limit
+NEST:{id}|MEMBER:{email}              → heartbeat TTL key (per-member liveness)
+NEST:{id}|QUEUEJAM|{song_id}         → sorted set of jams (actual key in db.py)
+NEST:{id}|COMMENTS|{song_id}          → sorted set of comments
+NEST:{id}|FILL-INFO|{trackid}         → hash (cached Spotify metadata for auto-fill)
+NEST:{id}|AIRHORNS                     → list of airhorn events (actual key in db.py)
+NEST:{id}|FREEHORN_{userid}            → set of free airhorn eligible songs
 ```
 
 ---

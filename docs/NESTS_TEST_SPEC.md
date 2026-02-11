@@ -6,28 +6,14 @@
 > for the authoritative test class → task mapping. This file is kept as a
 > reference for test intent but should NOT be used to guide implementation.
 
-Test suite for the Nests MVP (Phases 1-3). Tests should be written by Codex
-before implementation begins. Claude will run these tests to verify each step.
+This was the original test specification written before Codex generated the actual tests.
+Kept as a reference for test intent and coverage ideas.
 
-## Test Conventions (match existing patterns)
+## What Actually Exists
 
-- Test files live in `test/`
-- Use `pytest` with class-based grouping
-- `sys.path.insert(0, ...)` for imports
-- `SKIP_SPOTIFY_PREFETCH=1` environment variable for CI/fast runs
-- Use `unittest.mock` for external dependencies (Spotify, Redis where needed)
-- Tests that need Redis should use `fakeredis` (add to requirements.txt if missing)
-
-## Important: Redis Test Isolation
-
-Tests that touch Redis MUST use `fakeredis` to avoid hitting a real Redis instance.
-The `DB` class takes `redis.StrictRedis` in `__init__` — we'll need a way to inject
-a fake Redis. Options:
-
-1. **Preferred:** Add an optional `redis_client` param to `DB.__init__` for test injection
-2. **Alternative:** Monkey-patch `redis.StrictRedis` in test fixtures
-
-Since we're refactoring `DB.__init__` anyway (adding `nest_id`), option 1 is cleanest.
+- **Canonical tests:** `test/test_nests.py` — single file, xfail contract tests, Flask test client
+- **Task mapping:** `docs/NESTS_TASKS.md` — maps test classes to implementation tasks
+- **No fakeredis** in current tests (may be added during implementation for DB-level unit tests)
 
 ---
 

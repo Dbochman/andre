@@ -21,20 +21,20 @@ SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestRedisKeyPrefix
 
 | Test Class | File Location | Relevant Task(s) | Phase |
 |---|---|---|---|
-| `TestRedisKeyPrefixing` | `test/test_nests.py:610` | T1, T2 | 1 |
-| `TestMigrationHelpers` | `test/test_nests.py:660` | T3 | 1 |
-| `TestPubSubChannels` | `test/test_nests.py:679` | T4 | 1 |
-| `TestNestCleanupLogic` | `test/test_nests.py:627` | T10 | 2 |
-| `TestMembershipHeartbeat` | `test/test_nests.py:644` | T6, T9 | 2 |
-| `TestMasterPlayerMultiNest` | `test/test_nests.py:692` | T10 | 2 |
+| `TestRedisKeyPrefixing` | `test/test_nests.py:641` | T1, T2 | 1 |
+| `TestMigrationHelpers` | `test/test_nests.py:705` | T3 | 1 |
+| `TestPubSubChannels` | `test/test_nests.py:725` | T4 | 1 |
+| `TestNestCleanupLogic` | `test/test_nests.py:662` | T10 | 2 |
+| `TestMembershipHeartbeat` | `test/test_nests.py:688` | T6, T9 | 2 |
+| `TestMasterPlayerMultiNest` | `test/test_nests.py:740` | T10 | 2 |
 | `TestNestsAPI` | `test/test_nests.py:16` | T7, T8 | 2 |
-| `TestNestsAdminAPI` | `test/test_nests.py:224` | Phase 5 (future) |
-| `TestBillingAPI` | `test/test_nests.py:315` | Phase 5 (future) |
-| `TestSuperAdminAPI` | `test/test_nests.py:420` | Phase 5 (future) |
-| `TestEntitlementGates` | `test/test_nests.py:474` | Phase 5 (future) |
-| `TestAuditLogs` | `test/test_nests.py:530` | Phase 5 (future) |
-| `TestInviteOnly` | `test/test_nests.py:557` | Phase 5 (future) |
-| `TestFreeCap` | `test/test_nests.py:587` | Phase 5 (future) |
+| `TestNestsAdminAPI` | `test/test_nests.py:241` | Phase 5 (future) |
+| `TestBillingAPI` | `test/test_nests.py:333` | Phase 5 (future) |
+| `TestSuperAdminAPI` | `test/test_nests.py:427` | Phase 5 (future) |
+| `TestEntitlementGates` | `test/test_nests.py:479` | Phase 5 (future) |
+| `TestAuditLogs` | `test/test_nests.py:537` | Phase 5 (future) |
+| `TestInviteOnly` | `test/test_nests.py:567` | Phase 5 (future) |
+| `TestFreeCap` | `test/test_nests.py:608` | Phase 5 (future) |
 
 ### MVP-Relevant Tests (must pass by end of overnight run)
 
@@ -190,7 +190,7 @@ These are the test classes that should flip from `xfail` to passing:
 **Changes:**
 - `GET /nest/<code>` — look up nest, render `main.html` with `nest_id` in template context
 - Return 404 if nest doesn't exist
-- Add `/nest/` to `SAFE_PARAM_PATHS`
+- **Auth:** Do NOT add `/nest/` to `SAFE_PARAM_PATHS`. Nest pages require Google auth like everything else. The flow is: visit `echone.st/X7K2P` → redirect to `/nest/X7K2P` → Google login gate → render nest page. This is consistent with the existing app model where all pages require authentication.
 **Commit:** `feat(nests): add /nest/<code> page route`
 **Verify:** Part of `TestNestsAPI` tests
 
