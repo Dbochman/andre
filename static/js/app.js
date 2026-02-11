@@ -150,7 +150,10 @@ let proto = 'wss';
 if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
     proto = 'ws';
 }
-socket = new Socket(proto + '://'+location.host+'/socket/');
+// Connect to nest-specific WebSocket endpoint when in a temporary nest
+var _nestId = window.NEST_ID || 'main';
+var _socketPath = (_nestId && _nestId !== 'main') ? '/socket/' + _nestId + '/' : '/socket/';
+socket = new Socket(proto + '://'+location.host+_socketPath);
 
 var Song = Backbone.Model.extend({
 });
@@ -583,7 +586,7 @@ function fix_player(src, id, pos, paused){
     // Track the last synced track ID to prevent repeated sync calls
     if (src == 'spotify') {
       $('#ytapiplayer').data('youtube_hidden', 'true');
-      $('#ytapiplayer').css('z-index', '900');
+      $('#ytapiplayer').hide();
 
       // Only sync if this is a new track we haven't synced to yet
       if (last_synced_spotify_track != id) {
@@ -617,7 +620,7 @@ function fix_player(src, id, pos, paused){
             }
             if(!playing || playing != id){
                 $('#ytapiplayer').data('youtube_hidden', 'false');
-                $('#ytapiplayer').css('z-index', '1100');
+                $('#ytapiplayer').show();
                 Y.loadVideoById(id, pos);
                 // Respect local mute state and use local volume (volumeBeforeMute)
                 Y.setVolume(localMuted ? 0 : (volumeBeforeMute * yt_volume_adjust));
@@ -836,7 +839,8 @@ socket.on('player_position', function(src, track, pos){
         return; // don't update
     }
     
-    $('#playing-progress').css('width', Math.floor(400*pos/current_duration));
+    var progressW = $('#progress-wrapper').width() || $('#left').outerWidth();
+    $('#playing-progress').css('width', Math.floor(progressW*pos/current_duration));
     $('#progress-wrapper').attr('title', seconds_to_time(pos)+"/"+seconds_to_time(current_duration))
 
     // update the time remaining; this will cause ETAs to be updated for the queue
@@ -1437,9 +1441,9 @@ function make_player(ev){
         last_spotify_track = null;
         last_synced_spotify_track = null;
         $('#ytapiplayer').css('z-index', 900);
-        // Show sync audio button again when disconnected, hide airhorn
+        // Show sync audio buttons again when disconnected
         $('#sync-audio-btn').show();
-        $('#do-airhorn').hide();
+        $('#airhorn-sync-audio').show();
         return;
     }
     if (auth_token == null) {
@@ -1458,9 +1462,9 @@ function make_player(ev){
     socket.emit('request_volume');
 
     $('#make-player').text('disconnect audio');
-    // Hide sync audio button when connected, show airhorn
+    // Hide sync audio buttons when connected
     $('#sync-audio-btn').hide();
-    $('#do-airhorn').show();
+    $('#airhorn-sync-audio').hide();
 }
 
 function spotify_connect(url) {
@@ -1549,10 +1553,8 @@ function confirm_airhorn(msg, callback){
 var hover_offset = 0;
 
 function _window_resize(){
-    var $right = $('#right'),
-            ww = $(window).width();
-    $right.width(ww-400);
-    $(".queue-item-text").css("width", ww-(400+65+72+43));
+    var rightW = $('#right').width();
+    $(".queue-item-text").css("width", rightW-(65+72+43));
     $("#now-playing-text").css("width", $("#top-row").width()-(180+20));
     $("#now-playing-text h1").css("width", $("#top-row").width()-(180+60));
 }
@@ -1710,6 +1712,92 @@ function refresh_airhorns() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Nest real-time listener count
+// ---------------------------------------------------------------------------
+
+socket.on('member_update', function(count) {
+    var $el = $('#nest-listener-num');
+    if ($el.length) {
+        $el.text(count);
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Nest Bar interactions
+// ---------------------------------------------------------------------------
+
+function nestShowError(msg) {
+    var $err = $('#nest-bar-error');
+    $err.text(msg);
+    setTimeout(function() { $err.text(''); }, 5000);
+}
+
+function nestBuild() {
+    var name = prompt('Name your Nest (or leave blank):');
+    if (name === null) return; // user cancelled
+    var body = {};
+    if (name && name.trim()) {
+        body.name = name.trim();
+    }
+    fetch('/api/nests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body)
+    }).then(function(resp) {
+        if (!resp.ok) {
+            return resp.json().then(function(data) {
+                throw new Error(data.message || data.error || 'Failed to create nest');
+            });
+        }
+        return resp.json();
+    }).then(function(data) {
+        if (data.code) {
+            window.location.href = '/nest/' + data.code;
+        }
+    }).catch(function(err) {
+        nestShowError(err.message || 'Failed to create nest');
+    });
+}
+
+function nestJoin(ev) {
+    if (ev) ev.preventDefault();
+    var code = prompt('Enter the 5-character Nest code:');
+    if (code === null) return; // user cancelled
+    code = code.trim().toUpperCase();
+    if (!code || code.length !== 5) {
+        nestShowError('Enter a 5-character code');
+        return;
+    }
+    window.location.href = '/nest/' + code;
+}
+
+function nestShare() {
+    var code = window.NEST_CODE;
+    if (!code) return;
+    var url = window.location.origin + '/nest/' + code;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function() {
+            nestShowError(''); // clear any previous error
+            var $btn = $('#nest-share');
+            var orig = $btn.text();
+            $btn.text('Copied!');
+            setTimeout(function() { $btn.text(orig); }, 2000);
+        }).catch(function() {
+            nestShowError('Failed to copy link');
+        });
+    } else {
+        // Fallback: select and copy from a temporary input
+        var tmp = document.createElement('input');
+        tmp.value = url;
+        document.body.appendChild(tmp);
+        tmp.select();
+        try { document.execCommand('copy'); } catch(e) {}
+        document.body.removeChild(tmp);
+    }
+}
+
 window.addEventListener('load', function(){
     window_resize();
     var $hover_menu = $('#hover-menu');
@@ -1769,6 +1857,7 @@ window.addEventListener('load', function(){
                                     playlist_result_click);
     $('#make-player').on('click', make_player);
     $('#sync-audio-btn').on('click', make_player);
+    $('#airhorn-sync-audio').on('click', make_player);
     $('#change-color').on('click', changeColors);
 
     // Load saved color theme
@@ -1786,6 +1875,37 @@ window.addEventListener('load', function(){
     // Setup comment handling.
     addCommentsClickHandlers();
     addCommentInputKeyPressHandler();
+
+    // EchoNest tab event handlers
+    $('#nest-build').on('click', nestBuild);
+    $('#nest-join-btn').on('click', nestJoin);
+    $('#nest-share').on('click', nestShare);
+
+    // Fetch initial listener/nest counts
+    if (window.IS_MAIN_NEST) {
+        fetch('/api/nests', { credentials: 'same-origin' })
+            .then(function(resp) { return resp.ok ? resp.json() : null; })
+            .then(function(data) {
+                if (data && Array.isArray(data.nests)) {
+                    var totalListeners = 0;
+                    data.nests.forEach(function(n) {
+                        totalListeners += (n.member_count || 0);
+                    });
+                    $('#nest-listener-num').text(totalListeners);
+                    $('#nest-active-count').text(data.nests.length);
+                }
+            })
+            .catch(function() {});
+    } else if (window.NEST_CODE) {
+        fetch('/api/nests/' + window.NEST_CODE, { credentials: 'same-origin' })
+            .then(function(resp) { return resp.ok ? resp.json() : null; })
+            .then(function(data) {
+                if (data && typeof data.member_count === 'number') {
+                    $('#nest-listener-num').text(data.member_count);
+                }
+            })
+            .catch(function() {});
+    }
 
     socket.emit('fetch_playlist');
     socket.emit('fetch_now_playing');

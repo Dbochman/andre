@@ -1,0 +1,16 @@
+# Production Caddyfile for /etc/caddy/Caddyfile
+# Auto-HTTPS via Let's Encrypt
+
+echone.st {
+	reverse_proxy localhost:5001 {
+		flush_interval -1
+	}
+}
+
+www.echone.st {
+	redir https://echone.st{uri} permanent
+}
+
+andre.dylanbochman.com {
+	redir https://echone.st{uri} permanent
+}

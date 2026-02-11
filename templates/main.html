@@ -1,33 +1,35 @@
 {% extends "base.html"%}
 {% block body %}
+<script>
+    window.NEST_ID = "{{ nest_id }}";
+    window.NEST_CODE = "{{ nest_code }}";
+    window.NEST_NAME = "{{ nest_name }}";
+    window.IS_MAIN_NEST = {{ is_main_nest|tojson }};
+</script>
 <div id="page-container">
     <div id="body">
         <div id="left">
-            <div id="progress-wrapper">
-                <div id="playing-progress"></div>
-            </div>
             <div id="now-playing-album">
+                <div id="ytapiplayer"></div>
+                <div id="progress-wrapper">
+                    <div id="playing-progress"></div>
+                </div>
             </div>
             <div id="left-col-menu"
                 class="flat-menu"><a href="javascript:void(0);"
                     class="menu-item active"
+                data-id="echonest">EchoNest</a><a href="javascript:void(0);"
+                    class="menu-item"
                 data-id="airhorn">Airhorn</a><a href="javascript:void(0);"
                     class="menu-item"
-                data-id="add-song">Search</a>
-
-                <!--<a href="javascript:void(0);"
-                    class="menu-item"
-                data-id="search-song">QBD</a>-->
-
-                <!--a href="javascript:void(0);"
-                    class="menu-item" data-id="volume">Volume</a--><a
+                data-id="add-song">Search</a><a
                 href="javascript:void(0);" class="menu-item"
                             data-id="other">Other</a></div>
             <div id="tabs">
-                <div id="airhorn-tab" class="visible">
-                    <a href="javascript:void(0);" id="sync-audio-btn" class="left-button sync-audio-btn">sync audio</a>
+                <div id="airhorn-tab">
                     <a href="javascript:void(0);" id="airhorn-unpause-btn" class="left-button" style="display:none;">unpause everything</a>
-                    <a href="javascript:void(0);" id="do-airhorn" class="left-button" style="display:none;">airhorn</a>
+                    <a href="javascript:void(0);" id="do-airhorn" class="left-button">airhorn</a>
+                    <a href="javascript:void(0);" id="airhorn-sync-audio" class="left-button sync-audio-btn">Sync Audio</a>
                     <div id="airhorn-history">
                     </div>
                 </div>
@@ -84,6 +86,26 @@
                     <a href="javascript:void(0);" id="do-nuke-queue" class="left-button">clear queue</a>
                     <a href="javascript:void(0);" id="pause-button" class="left-button">pause everything</a>
                     <a href="/logout/" class="left-button">log out {{session.email.split('@')[0]}}</a>
+                </div>
+                <div id="echonest-tab" class="visible">
+                    <a href="javascript:void(0);" id="sync-audio-btn" class="left-button sync-audio-btn">Sync Audio</a>
+                    {% if is_main_nest %}
+                    <a href="javascript:void(0);" id="nest-build" class="left-button">Build a Nest</a>
+                    <a href="javascript:void(0);" id="nest-join-btn" class="left-button">Join a Nest</a>
+                    {% else %}
+                    <a href="javascript:void(0);" id="nest-share" class="left-button">Share Nest</a>
+                    <a href="/" class="left-button">Back to Home Nest</a>
+                    {% endif %}
+                    <span id="nest-bar-error" class="nest-bar-error"></span>
+                    <div class="nest-info-section nest-listener-section">
+                        {% if is_main_nest %}
+                        <span class="nest-name">EchoNest</span>
+                        <span class="nest-listener-count"><span id="nest-listener-num">--</span> listening across <span id="nest-active-count">--</span> nests</span>
+                        {% else %}
+                        <span class="nest-name">{{ nest_name }}</span>
+                        <span class="nest-listener-count"><span id="nest-listener-num">--</span> listening</span>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>

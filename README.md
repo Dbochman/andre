@@ -93,6 +93,19 @@ redis-server
 python run.py
 ```
 
+## Testing
+
+```bash
+# Quick (nest contract tests only)
+make test-quick
+
+# Nests + regression suite
+make test-nests
+
+# Full suite
+make test-all
+```
+
 ## API Endpoints
 
 | Endpoint | Method | Description |

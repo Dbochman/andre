@@ -25,6 +25,7 @@ from flask_assets import Environment, Bundle
 
 from config import CONF
 from db import DB, is_spotify_rate_limited, set_spotify_rate_limit, handle_spotify_exception
+from nests import pubsub_channel, NestManager, refresh_member_ttl, member_key, members_key
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -94,7 +95,12 @@ def _parse_session_cookie():
         return None
 
 def _handle_websocket():
-    """Handle WebSocket connections in before_request (before Flask route dispatch)."""
+    """Handle WebSocket connections in before_request (before Flask route dispatch).
+
+    Supports:
+      /socket       -> nest_id="main"
+      /socket/<id>  -> nest_id=<id> (validated via NestManager)
+    """
     ws = request.environ.get('wsgi.websocket')
 
     if ws is None:
@@ -109,14 +115,44 @@ def _handle_websocket():
         logger.warning('WebSocket unauthorized - no email in session')
         return 'Unauthorized', 401
 
-    MusicNamespace(email, 0).serve()
+    # Extract nest_id from path: /socket -> main, /socket/<id> -> id
+    path = request.path.rstrip('/')
+    parts = path.split('/')
+    # /socket -> ['', 'socket'], /socket/ABC -> ['', 'socket', 'ABC']
+    if len(parts) >= 3 and parts[2]:
+        nest_id = parts[2]
+        # Validate nest exists
+        if nest_manager and nest_manager.get_nest(nest_id) is None:
+            logger.warning('WebSocket: nest %s not found', nest_id)
+            return 'Nest not found', 404
+    else:
+        nest_id = "main"
+
+    MusicNamespace(email, 0, nest_id=nest_id).serve()
     return ''
 
 def _handle_volume_websocket():
-    """Handle volume WebSocket connections."""
+    """Handle volume WebSocket connections.
+
+    Supports:
+      /volume       -> nest_id="main"
+      /volume/<id>  -> nest_id=<id> (validated via NestManager)
+    """
     if request.environ.get('wsgi.websocket') is None:
         return 'WebSocket required', 400
-    VolumeNamespace().serve()
+
+    # Extract nest_id from path: /volume -> main, /volume/<id> -> id
+    path = request.path.rstrip('/')
+    parts = path.split('/')
+    # /volume -> ['', 'volume'], /volume/ABC -> ['', 'volume', 'ABC']
+    if len(parts) >= 3 and parts[2]:
+        nest_id = parts[2]
+        if nest_manager and nest_manager.get_nest(nest_id) is None:
+            return 'Nest not found', 404
+    else:
+        nest_id = "main"
+
+    VolumeNamespace(nest_id=nest_id).serve()
     return ''
 
 def __setup_bundles():
@@ -130,6 +166,13 @@ __setup_bundles()
 
 d = DB(False)
 logger.setLevel(logging.DEBUG)
+
+# Initialize NestManager for nest CRUD operations
+try:
+    nest_manager = NestManager()
+except Exception as e:
+    logger.warning("NestManager init failed (nests disabled): %s", e)
+    nest_manager = None
 
 auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
 auth.get_access_token()
@@ -257,15 +300,20 @@ class WebSocketManager(object):
         except Exception:
             logger.exception('WebSocket error')
         finally:
+            self._on_disconnect()
             try:
                 self._ws.close()
             except Exception:
                 pass
             gevent.killall(self._children)
 
+    def _on_disconnect(self):
+        """Hook called when WebSocket disconnects. Override in subclass."""
+        pass
+
 
 class MusicNamespace(WebSocketManager):
-    def __init__(self, email, penalty):
+    def __init__(self, email, penalty, nest_id="main"):
         super(MusicNamespace, self).__init__()
         try:
             os.makedirs(CONF.OAUTH_CACHE_PATH)
@@ -274,14 +322,103 @@ class MusicNamespace(WebSocketManager):
         self.logger = app.logger
         self.email = email
         self.penalty = penalty
+        self.nest_id = nest_id
+        # Create a per-nest DB instance
+        self.db = DB(init_history_to_redis=False, nest_id=nest_id)
         self.auth = spotipy.oauth2.SpotifyOAuth(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET, SPOTIFY_REDIRECT_URI,
                                                 "prosecco:%s" % email, scope="streaming user-read-currently-playing user-read-playback-state user-modify-playback-state", cache_path="%s/%s" % (CONF.OAUTH_CACHE_PATH, email))
+        # Join nest on connect
+        if nest_manager:
+            try:
+                nest_manager.join_nest(nest_id, email)
+            except Exception:
+                logger.exception('Failed to join nest %s', nest_id)
         self.spawn(self.listener)
-        self.log('New namespace for {0}'.format(self.email))
+        self.log('New namespace for {0} (nest={1})'.format(self.email, self.nest_id))
+
+    def _on_disconnect(self):
+        """Leave nest on WebSocket disconnect."""
+        if nest_manager:
+            try:
+                nest_manager.leave_nest(self.nest_id, self.email)
+            except Exception:
+                logger.exception('Failed to leave nest %s', self.nest_id)
+        # Delete member TTL key
+        try:
+            mk = member_key(self.nest_id, self.email)
+            self.db._r.delete(mk)
+        except Exception:
+            pass
+        # Remove from MEMBERS set
+        try:
+            mkey = members_key(self.nest_id)
+            self.db._r.srem(mkey, self.email)
+        except Exception:
+            pass
+
+    def serve(self):
+        """Override serve to add membership heartbeat TTL refresh."""
+        import time as _time
+        # Initial heartbeat on connect
+        try:
+            refresh_member_ttl(self.db._r, self.nest_id, self.email, 90)
+        except Exception:
+            logger.exception('Failed initial heartbeat for %s', self.email)
+
+        last_heartbeat = _time.time()
+        try:
+            while True:
+                msg = None
+                with gevent.Timeout(30, False):
+                    msg = self._ws.receive()
+
+                # Refresh heartbeat every 30 seconds
+                now = _time.time()
+                if now - last_heartbeat >= 30:
+                    try:
+                        refresh_member_ttl(self.db._r, self.nest_id, self.email, 90)
+                    except Exception:
+                        logger.exception('Failed heartbeat for %s', self.email)
+                    last_heartbeat = now
+
+                if msg is None:
+                    if getattr(self._ws, 'closed', False):
+                        break
+                    continue
+                if msg == '':
+                    if getattr(self._ws, 'closed', False):
+                        break
+                    continue
+                if isinstance(msg, bytes):
+                    msg = msg.decode('utf-8', 'ignore')
+                T = msg[0]
+                if T == '1':
+                    data = json.loads(msg[1:]) if len(msg) > 1 else None
+                    if not data:
+                        continue
+                    event = data[0]
+                    args = data[1:]
+                    try:
+                        getattr(self, 'on_' + event.replace('-', '_'))(*args)
+                    except Exception:
+                        logger.exception('Socket handler error for event: %s', event)
+                elif T == '0':
+                    pass  # Heartbeat
+                else:
+                    return
+        except Exception:
+            logger.exception('WebSocket error')
+        finally:
+            self._on_disconnect()
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+            gevent.killall(self._children)
 
     def listener(self):
         r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379, password=CONF.REDIS_PASSWORD or None, decode_responses=True).pubsub()
-        r.subscribe('MISC|update-pubsub')
+        r.subscribe(pubsub_channel(self.nest_id))
         for m in r.listen():
             if m['type'] != 'message':
                 continue
@@ -308,7 +445,13 @@ class MusicNamespace(WebSocketManager):
                 _, data = msg.split('|', 1)
                 self.emit('no_airhorn', json.loads(data))
             elif msg == 'update_freehorn':
-                self.emit('free_horns', d.get_free_horns(self.email))
+                self.emit('free_horns', self.db.get_free_horns(self.email))
+            elif msg.startswith('member_update|'):
+                _, count_str = msg.split('|', 1)
+                try:
+                    self.emit('member_update', int(count_str))
+                except (ValueError, TypeError):
+                    pass
 
     def log(self, msg, debug=True):
         if debug:
@@ -316,32 +459,43 @@ class MusicNamespace(WebSocketManager):
         else:
             self.logger.info(msg)
 
+    def _safe_db_call(self, fn, *args, **kwargs):
+        """Call a DB method, catching RuntimeError if the nest is being deleted."""
+        try:
+            return fn(*args, **kwargs)
+        except RuntimeError as e:
+            if "being deleted" in str(e):
+                self.emit('error', {'message': 'This nest is being deleted'})
+                return None
+            raise
+
     def on_request_volume(self):
-        self.emit('volume', str(d.get_volume()))
+        self.emit('volume', str(self.db.get_volume()))
 
     def on_change_volume(self, vol):
-        self.emit('volume', str(d.set_volume(vol)))
+        result = self._safe_db_call(self.db.set_volume, vol)
+        if result is not None:
+            self.emit('volume', str(result))
 
     def on_add_song(self, song_id, src):
         logger.info('on_add_song called: song_id=%s, src=%s, email=%s', song_id, src, self.email)
         if src == 'spotify':
             self.log(
                 'add_spotify_song "{0}" "{1}"'.format(self.email, song_id))
-            d.add_spotify_song(self.email, song_id, penalty=self.penalty)
+            self._safe_db_call(self.db.add_spotify_song, self.email, song_id, penalty=self.penalty)
         elif src == 'youtube':
             logger.info('Adding YouTube song: %s for user %s', song_id, self.email)
-            d.add_youtube_song(self.email, song_id, penalty=self.penalty)
+            self._safe_db_call(self.db.add_youtube_song, self.email, song_id, penalty=self.penalty)
         elif src == 'soundcloud':
             self.log(
                 'add_soundcloud_song "{0}" "{1}"'.format(self.email, song_id))
-            d.add_soundcloud_song(self.email, song_id, penalty=self.penalty)
-        # self.log(d.get_queued()[-1])
+            self._safe_db_call(self.db.add_soundcloud_song, self.email, song_id, penalty=self.penalty)
 
     def on_fetch_playlist(self):
-        self.emit('playlist_update', d.get_queued())
+        self.emit('playlist_update', self.db.get_queued())
 
     def on_fetch_now_playing(self):
-        self.emit('now_playing_update', d.get_now_playing())
+        self.emit('now_playing_update', self.db.get_now_playing())
 
     def on_fetch_search_token(self):
         logger.debug("fetch search token")
@@ -373,31 +527,31 @@ class MusicNamespace(WebSocketManager):
             self.emit('auth_token_refresh', self.auth.get_authorize_url())
 
     def on_fetch_airhorns(self):
-        self.emit('airhorns', d.get_horns())
+        self.emit('airhorns', self.db.get_horns())
 
     def on_vote(self, id, up):
         self.log('Vote from {0} on {1} {2}'.format(self.email, id, up))
-        d.vote(self.email, id, up)
+        self._safe_db_call(self.db.vote, self.email, id, up)
 
     def on_kill(self, id):
-        self.log('Kill {0} ({2}) from {1}'.format(id, self.email, d.get_song_from_queue(id).get('user')))
-        d.kill_song(id, self.email)
+        self.log('Kill {0} ({2}) from {1}'.format(id, self.email, self.db.get_song_from_queue(id).get('user')))
+        self._safe_db_call(self.db.kill_song, id, self.email)
 
     def on_kill_playing(self):
-        self.log('Kill playing ({1}) from {0}'.format(self.email, d.get_now_playing().get('user')))
-        d.kill_playing(self.email)
+        self.log('Kill playing ({1}) from {0}'.format(self.email, self.db.get_now_playing().get('user')))
+        self._safe_db_call(self.db.kill_playing, self.email)
 
     def on_nuke_queue(self):
         self.log('Queue nuke from {0}'.format(self.email))
-        d.nuke_queue(self.email)
+        self._safe_db_call(self.db.nuke_queue, self.email)
 
     def on_airhorn(self, name):
         self.log('Airhorn {0}, {1}'.format(self.email, name))
-        d.airhorn(self.email, name=name)
+        self._safe_db_call(self.db.airhorn, self.email, name=name)
 
     def on_free_airhorn(self):
         self.log('Free Airhorn {0}'.format(self.email))
-        d.free_airhorn(self.email)
+        self._safe_db_call(self.db.free_airhorn, self.email)
 
     # def on_add_playlist(self, key, shuffled):
     #     self.log('Add playlist from {0} {1}'.format(self.email, key))
@@ -409,33 +563,33 @@ class MusicNamespace(WebSocketManager):
 
     def on_jam(self, id):
         self.log('{0} jammed {1}'.format(self.email, id))
-        d.jam(id, self.email)
+        self._safe_db_call(self.db.jam, id, self.email)
 
     def on_benderQueue(self, id):
         self.log('{0} benderqueues {1}'.format(self.email, id))
-        d.benderqueue(id, self.email)
+        self._safe_db_call(self.db.benderqueue, id, self.email)
 
     def on_benderFilter(self, id):
         self.log('{0} benderfilters {1}'.format(self.email, id))
-        d.benderfilter(id, self.email)
+        self._safe_db_call(self.db.benderfilter, id, self.email)
 
     def on_get_free_horns(self):
-        self.emit('free_horns', d.get_free_horns(self.email))
+        self.emit('free_horns', self.db.get_free_horns(self.email))
 
     def on_pause(self):
         self.log('Pause button! {0}'.format(self.email))
-        d.pause(self.email)
+        self._safe_db_call(self.db.pause, self.email)
 
     def on_unpause(self):
         self.log('Unpause button! {0}'.format(self.email))
-        d.unpause(self.email)
+        self._safe_db_call(self.db.unpause, self.email)
 
     def on_add_comment(self, song_id, user_id, comment):
         self.log("Add comment from {}!".format(user_id))
-        d.add_comment(song_id, user_id, comment)
+        self._safe_db_call(self.db.add_comment, song_id, user_id, comment)
 
     def on_get_comments_for_song(self, song_id):
-        comments = d.get_comments(song_id)
+        comments = self.db.get_comments(song_id)
         self.emit('comments_for_song', song_id, comments)
 
     def on_loaded_airhorn(self, name):
@@ -542,21 +696,23 @@ class VolumeNamespace(WebSocketManager):
         else:
             self.logger.info(msg)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, nest_id="main", **kwargs):
         super(VolumeNamespace, self).__init__(*args, **kwargs)
         self.logger = app.logger
-        self.log('new volume listener! {0}'.format(request.remote_addr), False)
+        self.nest_id = nest_id
+        self.db = DB(init_history_to_redis=False, nest_id=nest_id)
+        self.log('new volume listener for nest {0}! {1}'.format(nest_id, request.remote_addr), False)
         self.spawn(self.listener)
 
     def on_request_volume(self):
-        self.emit('volume', str(d.get_volume()))
+        self.emit('volume', str(self.db.get_volume()))
 
     def on_change_volume(self, vol):
-        self.emit('volume', str(d.set_volume(vol)))
+        self.emit('volume', str(self.db.set_volume(vol)))
 
     def listener(self):
         r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379, password=CONF.REDIS_PASSWORD or None, decode_responses=True).pubsub()
-        r.subscribe('MISC|update-pubsub')
+        r.subscribe(pubsub_channel(self.nest_id))
         for m in r.listen():
             if m['type'] != 'message':
                 continue
@@ -576,7 +732,8 @@ SAFE_PATHS = ('/login/', '/logout/', '/playing/', '/queue/', '/volume/',
 SAFE_PARAM_PATHS = ('/history', '/user_history', '/user_jam_history', '/search/v2', '/youtube/lookup', '/youtube/playlist', '/add_song',
     '/blast_airhorn', '/airhorn_list', '/queue/', '/jam', '/api/')
 VALID_HOSTS = ('localhost:5000', 'localhost:5001', '127.0.0.1:5000', '127.0.0.1:5001',
-               str(CONF.HOSTNAME) if CONF.HOSTNAME else '')
+               str(CONF.HOSTNAME) if CONF.HOSTNAME else '',
+               str(CONF.ECHONEST_DOMAIN) if getattr(CONF, 'ECHONEST_DOMAIN', None) else '')
 
 
 @app.before_request
@@ -758,7 +915,24 @@ def queue_specific(id):
 
 @app.route('/')
 def main():
-    return render_template('main.html')
+    return render_template('main.html',
+                           nest_id='main', nest_code='main',
+                           nest_name='Home Nest', is_main_nest=True)
+
+
+@app.route('/nest/<code>')
+def nest_page(code):
+    """Render the main page scoped to a specific nest."""
+    if nest_manager is None:
+        return 'Nests not available', 503
+    nest = nest_manager.get_nest(code)
+    if nest is None:
+        return 'Nest not found', 404
+    return render_template('main.html',
+                           nest_id=nest.get('nest_id', code),
+                           nest_code=code,
+                           nest_name=nest.get('name', ''),
+                           is_main_nest=False)
 
 
 @app.route('/socket/')
@@ -1100,6 +1274,31 @@ def require_api_token(f):
     return decorated
 
 
+def require_session_or_api_token(f):
+    """Allow access via session auth (browser) OR API token (programmatic).
+    Sets g.auth_email to the authenticated user's email."""
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        from flask import g
+        # Check session auth first (browser users)
+        email = _get_authenticated_email()
+        if email:
+            g.auth_email = email
+            return f(*args, **kwargs)
+        # Fall back to API token auth
+        configured_token = CONF.ANDRE_API_TOKEN
+        auth_header = request.headers.get('Authorization', '')
+        if configured_token and auth_header.startswith('Bearer '):
+            provided_token = auth_header[7:]
+            if secrets.compare_digest(provided_token, configured_token):
+                g.auth_email = API_EMAIL
+                return f(*args, **kwargs)
+        resp = jsonify(error='Authentication required')
+        resp.status_code = 401
+        return resp
+    return decorated
+
+
 @app.route('/api/queue/remove', methods=['POST'])
 @require_api_token
 def api_queue_remove():
@@ -1288,7 +1487,7 @@ def api_events():
             password=CONF.REDIS_PASSWORD or None,
             decode_responses=True,
         ).pubsub()
-        r.subscribe('MISC|update-pubsub')
+        r.subscribe(pubsub_channel("main"))
         try:
             while True:
                 msg = None
@@ -1329,3 +1528,133 @@ def api_events():
     resp.headers['Cache-Control'] = 'no-cache'
     resp.headers['X-Accel-Buffering'] = 'no'
     return resp
+
+
+# ---------------------------------------------------------------------------
+# Nests API (token-authenticated, for managing nests)
+# ---------------------------------------------------------------------------
+
+# Reserved words that cannot be used as vanity codes
+_VANITY_RESERVED = frozenset({
+    'api', 'socket', 'login', 'signup', 'static', 'assets',
+    'health', 'status', 'metrics', 'terms', 'privacy',
+    'admin', 'nest', 'nests', 'volume', 'queue', 'playing',
+    'logout', 'guest', 'main',
+})
+
+import re
+_VANITY_RE = re.compile(r'^[a-zA-Z][a-zA-Z0-9-]*$')
+
+
+def _validate_vanity_code(code):
+    """Validate a vanity code. Returns (ok, error_message)."""
+    if not code:
+        return True, None
+    if len(code) < 3:
+        return False, "Vanity code must be at least 3 characters"
+    if len(code) > 24:
+        return False, "Vanity code must be at most 24 characters"
+    if code.lower() in _VANITY_RESERVED:
+        return False, f"'{code}' is a reserved word"
+    if not _VANITY_RE.match(code):
+        return False, "Vanity code must start with a letter and contain only letters, digits, and hyphens"
+    return True, None
+
+
+@app.route('/api/nests', methods=['POST'])
+@require_session_or_api_token
+def api_nests_create():
+    from flask import g
+    if nest_manager is None:
+        return jsonify(error='Nests not available'), 503
+    body = request.get_json(silent=True) or {}
+    name = body.get('name')
+    creator = g.auth_email
+    try:
+        nest = nest_manager.create_nest(creator, name=name)
+        return jsonify(nest)
+    except Exception as e:
+        logger.error("Error creating nest: %s", e)
+        return jsonify(error='internal_error', message=str(e)), 500
+
+
+@app.route('/api/nests', methods=['GET'])
+@require_session_or_api_token
+def api_nests_list():
+    if nest_manager is None:
+        return jsonify(error='Nests not available'), 503
+    nests_list = nest_manager.list_nests()
+    result = []
+    for nest_id, meta in nests_list:
+        result.append(meta)
+    return jsonify(nests=result)
+
+
+@app.route('/api/nests/<code>', methods=['GET'])
+@require_session_or_api_token
+def api_nests_get(code):
+    if nest_manager is None:
+        return jsonify(error='Nests not available'), 503
+    nest = nest_manager.get_nest(code)
+    if nest is None:
+        return jsonify(error='not_found', message='Nest not found.'), 404
+    # Include member count for frontend display
+    mkey = members_key(code)
+    try:
+        nest['member_count'] = nest_manager._r.scard(mkey)
+    except Exception:
+        nest['member_count'] = 0
+    return jsonify(nest)
+
+
+@app.route('/api/nests/<code>', methods=['PATCH'])
+@require_session_or_api_token
+def api_nests_update(code):
+    from flask import g
+    if nest_manager is None:
+        return jsonify(error='Nests not available'), 503
+    nest = nest_manager.get_nest(code)
+    if nest is None:
+        return jsonify(error='not_found', message='Nest not found.'), 404
+
+    # Only the creator can update a nest (field is 'creator' in all nest metadata)
+    if g.auth_email != nest.get('creator'):
+        return jsonify(error='forbidden', message='Only the nest creator can update it.'), 403
+
+    body = request.get_json(silent=True) or {}
+
+    # Update name if provided
+    if 'name' in body:
+        nest['name'] = body['name']
+
+    # Store updated metadata (use nest_id, not the URL code, to avoid duplicates)
+    nest_manager._r.hset('NESTS|registry', nest['nest_id'], json.dumps(nest))
+    return jsonify(nest)
+
+
+@app.route('/api/nests/<code>', methods=['DELETE'])
+@require_session_or_api_token
+def api_nests_delete(code):
+    if nest_manager is None:
+        return jsonify(error='Nests not available'), 503
+    nest = nest_manager.get_nest(code)
+    if nest is None:
+        return jsonify(error='not_found', message='Nest not found.'), 404
+    if nest.get('is_main'):
+        return jsonify(error='forbidden', message='Cannot delete the main nest.'), 403
+    nest_manager.delete_nest(code)
+    return jsonify(ok=True)
+
+
+# Catch-all for bare nest codes: echone.st/X7K2P → /nest/X7K2P
+# Must be registered LAST so it doesn't shadow other routes.
+import re
+_NEST_CODE_RE = re.compile(r'^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$')
+
+
+@app.route('/<path:code>')
+def nest_code_catchall(code):
+    """Redirect bare nest codes to /nest/<code>."""
+    if _NEST_CODE_RE.match(code.upper()):
+        return redirect('/nest/' + code.upper())
+    abort(404)

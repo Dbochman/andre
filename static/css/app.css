@@ -52,8 +52,9 @@ a:hover, a:active {
 }
 
 
-#left {width:400px; float:left; background: rgb(31, 31, 31);min-height:100%;}
-#right{float:right;}
+#body {display:flex; min-height:100%;}
+#left {width:30%; min-width:280px; flex-shrink:0; background: rgb(31, 31, 31);min-height:100%;overflow:hidden;position:relative;}
+#right{flex:1; min-width:0;}
 
 #top-row {width:100%;background-color:#222;height:270px; position: relative;}
 #now-playing-text {padding-top:15px; padding-left:20px; height:220px;display:inline-block; overflow:hidden; position: absolute;}
@@ -96,45 +97,45 @@ float:left; width:30px; height:30px;
 #playing-buttons a:hover {background:rgba(0,0,0,0.4);text-decoration:none;}
 #now-playing-person {float:right; height:270px; width:180px;background-repeat:no-repeat;background-position:center;background-color:black;background-size:contain;}
 
-#now-playing-album {background:#00000F; height:400px;width:400px;float:left;position:absolute;z-index:1000;background-repeat:no-repeat;background-size:contain;}
-#progress-wrapper {width:400px; margin-top:392px;z-index:2000;position:absolute;}
+#now-playing-album {background:#00000F; width:100%;aspect-ratio:1;position:relative;z-index:1000;background-repeat:no-repeat;background-size:cover;background-position:center;}
+#progress-wrapper {width:100%;z-index:2000;position:absolute;bottom:0;left:0;}
 #playing-progress {background: rgba(var(--accent-hover-rgb), 0.85); height:8px; width: 0px;-webkit-transition: width 500ms;transition:width 500ms;}
 
-#left-col-menu {width:400px;float:left;background:rgb(31, 31, 31);margin-top:400px;}
+#left-col-menu {width:100%;background:rgb(31, 31, 31);display:flex;flex-wrap:nowrap;}
 
-.menu-item {display:inline-block;width:121px;margin:0;padding:10px 5px;text-align:center;color: rgb(var(--accent-hover-rgb));border-right:1px solid rgba(0,0,0,0.4);}
+.menu-item {flex:1;margin:0;padding:10px 0;text-align:center;color: rgb(var(--accent-hover-rgb));border-right:1px solid rgba(0,0,0,0.4);box-sizing:border-box;font-size:13px;}
 .menu-item:hover {text-decoration: none; background:rgb(0,0,0,0.8); color: rgb(var(--accent-hover-rgb));}
 
 .menu-item.active {background: rgba(0,0,0,0.2); text-decoration:none; color:rgb(var(--accent-hover-rgb));}
 #tabs > div {display:none; min-height: 700px;}
 #tabs > div.visible {display:block;}
-.left-button {width: 360px; display: block; float:left; padding: 20px;
-                text-align:center;font-size:20px;
+.left-button {width: 100%; display: block; float:left; padding: 20px;
+                text-align:center;font-size:20px;box-sizing:border-box;
                 border-top: 1px solid rgba(0, 0, 0, 0.4);}
 .left-button:hover, .left-button:focus {text-decoration:none; background: rgb(31, 31, 31);color: rgb(var(--accent-hover-rgb));}
 
-.search-item {width: 400px;cursor:pointer;border-bottom:1px solid rgba(17, 17, 17, 0.8);display:table-row;}
+.search-item {width: 100%;cursor:pointer;border-bottom:1px solid rgba(17, 17, 17, 0.8);display:flex;align-items:center;}
 .search-item:nth-child(even) {background-color:rgba(0,0,0,0.3);}
 .search-item h4, .search-item h5 {margin:0;padding:0;}
 .search-item:hover {background: rgba(255,255,255,0.1);}
-.search-item .text {color:#EEEEFF;width:320px;padding:0 10px;display:table-cell;}
-.search-item .icon {height:60px;width:60px;
-            background: no-repeat center center; background-size:contain;
-            display:table-cell;}
-#song-search input {width:376px;padding:10px;
-                    background: rgba(2555,255,255,0.3);
+.search-item .text {color:#EEEEFF;padding:0 10px;flex:1;min-width:0;overflow:hidden;}
+.search-item .text h4, .search-item .text h5 {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.search-item .icon {height:60px;width:60px;flex-shrink:0;
+            background: no-repeat center center; background-size:contain;}
+#song-search input {width:100%;box-sizing:border-box;padding:10px;
+                    background: rgba(255,255,255,0.3);
                     color: #FFFFFF;border-radius:0;
                     border:2px solid rgba(255,255,255,0.4);}
 #song-search {margin:0;}
 
-#uri-search input {width:376px;padding:10px;
-                    background: rgba(2555,255,255,0.3);
+#uri-search input {width:100%;box-sizing:border-box;padding:10px;
+                    background: rgba(255,255,255,0.3);
                     color: #FFFFFF;border-radius:0;
                     border:2px solid rgba(255,255,255,0.4);}
 #uri-search {margin:0;}
 
-#podcast-search input {width:376px;padding:10px;
-                    background: rgba(2555,255,255,0.3);
+#podcast-search input {width:100%;box-sizing:border-box;padding:10px;
+                    background: rgba(255,255,255,0.3);
                     color: #FFFFFF;border-radius:0;
                     border:2px solid rgba(255,255,255,0.4);}
 #podcast-search {margin:0; margin-top:20px; border-top: 1px solid rgba(255,255,255,0.2); padding-top:10px;}
@@ -231,25 +232,26 @@ float:left; width:30px; height:30px;
 .controls.voted .vote-down, .controls.voted .vote-up {
     background:rgba(0,0,0,0.3); color: rgba(255, 255, 255, 0.3);}
 
-#chat-msgs {height: 300px; overflow-y:scroll; width:400px;}
+#chat-msgs {height: 300px; overflow-y:scroll; width:100%;}
 #chat-msgs .chat-msg {color: #383838;border-top:1px solid rgba(0,0,0,0.2);}
 #chat-msgs .chat-msg:nth-child(even) {background: rgba(220,220,255,0.1);}
 #chat-msgs .chat-msg div {display:inline-block;}
 #chat-msgs .chat-msg .nick {width:90px; text-align:right;vertical-align: top;
                             font-weight:900;}
-#chat-msgs .chat-msg .msg {width:275px;}
-#chat-send input {width:376px;padding:10px;
-                    background: rgba(2555,255,255,0.3);
+#chat-msgs .chat-msg .msg {width:calc(100% - 100px);}
+#chat-send input {width:100%;box-sizing:border-box;padding:10px;
+                    background: rgba(255,255,255,0.3);
                     color: #383838;border-radius:0;
                     border:2px solid rgba(255,255,255,0.4);}
-#ytapiplayer {position:absolute;top:0;left:0; z-index:900;}
+#ytapiplayer {position:absolute;top:0;left:0; z-index:1100; width:100% !important; height:100% !important; display:none;}
 
 #volume-tab {
     color: #EEEEFF;
     padding: 5px 20px;
-    width: 360px;
+    width: 100%;
+    box-sizing: border-box;
 }
-#volume-tab input {width:340px; background:rgba(255,255,255,0.1); height:10px; border-radius: 5px;
+#volume-tab input {width:100%; background:rgba(255,255,255,0.1); height:10px; border-radius: 5px;
     -webkit-appearance: none !important;
 }
 #top-row.autoplay {
@@ -269,7 +271,7 @@ float:left; width:30px; height:30px;
 #confirm a:hover {text-decoration:none; background: rgba(0,0,0,0.1);}
 
 .airhorn {
-    height: 65px; width:400px;clear:both; overflow: hidden;
+    height: 65px; width:100%;clear:both; overflow: hidden;
     color: #b9b9b9; margin-bottom: 5px;
     border-top: 1px solid rgba(0, 0, 0, 0.4);
 }
@@ -291,7 +293,6 @@ background-position: center center;
 #connect.disabled {display:none;}
 
 /* Paused state - album art overlay */
-/* Note: #now-playing-album already has position:absolute, keep it */
 
 #now-playing-album.paused::before {
     content: '';
@@ -352,4 +353,52 @@ background-position: center center;
     margin-left: 8px;
     font-weight: bold;
     text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------------------
+   Nest Bar
+   --------------------------------------------------------------------------- */
+
+/* EchoNest tab styles */
+#echonest-tab .nest-info-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+.nest-listener-section {
+    position: relative;
+    border-bottom: none;
+    border-top: 1px solid rgba(0, 0, 0, 0.4);
+    justify-content: center;
+}
+
+.nest-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-color);
+    white-space: nowrap;
+}
+
+.nest-listener-count {
+    position: absolute;
+    right: 20px;
+    font-size: 13px;
+    color: rgba(var(--accent-color-rgb), 0.6);
+    white-space: nowrap;
+}
+
+#nest-listener-num {
+    font-weight: 700;
+    color: var(--accent-color);
+}
+
+.nest-bar-error {
+    display: block;
+    padding: 8px 20px;
+    font-size: 20px;
+    color: #ff4d4d;
+    text-align: center;
 }

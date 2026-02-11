@@ -16,3 +16,4 @@ click
 psycopg2-binary
 simplejson
 pytest
+fakeredis>=2.0

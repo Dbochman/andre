@@ -1,0 +1,29 @@
+name: nests-tests
+
+on:
+  push:
+    branches:
+      - feature/nests
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  test-nests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run nests tests
+        env:
+          SKIP_SPOTIFY_PREFETCH: "1"
+        run: ./scripts/test_nests.sh

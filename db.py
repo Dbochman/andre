@@ -51,7 +51,8 @@ server_tokens = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, 
 spotify_client = spotipy.client.Spotify(client_credentials_manager=server_tokens)
 
 auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
-auth.get_access_token()
+if not os.environ.get('SKIP_SPOTIFY_PREFETCH'):
+    auth.get_access_token()
 
 # SoundCloud OAuth token cache (shared across all uses)
 _soundcloud_token = None
@@ -182,7 +183,7 @@ class DB(object):
         'genre': 35, 'throwback': 30, 'artist_search': 25, 'top_tracks': 5, 'album': 5,
     }
 
-    # Maps strategy name to its Redis cache key suffix
+    # Maps strategy name to its Redis cache key suffix (bare keys, resolved via _cache_key())
     _STRATEGY_CACHE_KEYS = {
         'genre': 'BENDER|cache:genre',
         'throwback': 'BENDER|cache:throwback',
@@ -191,15 +192,29 @@ class DB(object):
         'album': 'BENDER|cache:album',
     }
 
-    def __init__(self, init_history_to_redis=True):
-        logger.info('Creating DB object')
-        redis_host = CONF.REDIS_HOST or 'localhost'
-        redis_port = CONF.REDIS_PORT or 6379
-        redis_password = CONF.REDIS_PASSWORD or None
-        self._r = redis.StrictRedis(host=redis_host, port=redis_port, password=redis_password, decode_responses=True)
-        self._h = PlayHistory(self)
-        if init_history_to_redis:
-            self._h.init_history()
+    def _cache_key(self, strategy):
+        """Resolve a strategy name to its nest-scoped Redis cache key."""
+        bare = self._STRATEGY_CACHE_KEYS.get(strategy)
+        if bare is None:
+            return None
+        return self._key(bare)
+
+    def __init__(self, init_history_to_redis=True, nest_id="main", redis_client=None):
+        logger.info('Creating DB object (nest_id=%s)', nest_id)
+        self.nest_id = nest_id
+        if redis_client is not None:
+            self._r = redis_client
+        else:
+            redis_host = CONF.REDIS_HOST or 'localhost'
+            redis_port = CONF.REDIS_PORT or 6379
+            redis_password = CONF.REDIS_PASSWORD or None
+            self._r = redis.StrictRedis(host=redis_host, port=redis_port, password=redis_password, decode_responses=True)
+        if redis_client is None:
+            self._h = PlayHistory(self)
+            if init_history_to_redis:
+                self._h.init_history()
+        else:
+            self._h = None
         self._oauth_token = None
         self._oauth_token_expires = datetime.datetime(2000,1,1,1)
         try:
@@ -211,9 +226,21 @@ class DB(object):
             else:
                 raise
 
+    def _key(self, key):
+        """Prefix a Redis key with the nest namespace."""
+        return f"NEST:{self.nest_id}|{key}"
+
+    def _check_nest_active(self):
+        """Raise RuntimeError if this nest is being deleted. Skips check for main."""
+        if self.nest_id == "main":
+            return
+        from nests import is_nest_deleting
+        if is_nest_deleting(self._r, self.nest_id):
+            raise RuntimeError("Nest is being deleted")
+
     def big_scrobble(self, email, tid):
         #add played song to FILTER "set"
-        self._r.setex("FILTER|%s"% tid, CONF.BENDER_FILTER_TIME, 1)
+        self._r.setex(self._key("FILTER|%s"% tid), CONF.BENDER_FILTER_TIME, 1)
 
     # ── Bender: Per-Song Strategy Rotation ──────────────────────────
 
@@ -228,17 +255,17 @@ class DB(object):
                 return False
             return ':episode:' not in uri
 
-        candidate = self._r.get('MISC|last-queued')
+        candidate = self._r.get(self._key('MISC|last-queued'))
         if is_valid_track_seed(candidate):
             return candidate
 
-        candidate = self._r.get('MISC|last-bender-track')
+        candidate = self._r.get(self._key('MISC|last-bender-track'))
         if is_valid_track_seed(candidate):
             return candidate
 
-        now_playing_id = self._r.get('MISC|now-playing')
+        now_playing_id = self._r.get(self._key('MISC|now-playing'))
         if now_playing_id:
-            candidate = self._r.hget('QUEUE|{}'.format(now_playing_id), 'trackid')
+            candidate = self._r.hget(self._key('QUEUE|{}'.format(now_playing_id)), 'trackid')
             if is_valid_track_seed(candidate):
                 return candidate
 
@@ -255,14 +282,14 @@ class DB(object):
         track_id = seed_uri.split(":")[-1]
 
         # Check cache
-        cached = self._r.hgetall('BENDER|seed-info')
+        cached = self._r.hgetall(self._key('BENDER|seed-info'))
         if cached and cached.get('seed_uri') == seed_uri:
             cached['genres'] = json.loads(cached.get('genres', '[]'))
             return cached
 
         # Stale or missing — delete and re-fetch
         if cached:
-            self._r.delete('BENDER|seed-info')
+            self._r.delete(self._key('BENDER|seed-info'))
 
         if is_spotify_rate_limited():
             logger.debug("_get_seed_info: Spotify rate limited")
@@ -293,8 +320,8 @@ class DB(object):
             'genres': json.dumps(genres),
             'seed_uri': seed_uri,
         }
-        self._r.hset('BENDER|seed-info', mapping=info)
-        self._r.expire('BENDER|seed-info', 60 * 20)
+        self._r.hset(self._key('BENDER|seed-info'), mapping=info)
+        self._r.expire(self._key('BENDER|seed-info'), 60 * 20)
 
         info['genres'] = genres
         return info
@@ -320,6 +347,11 @@ class DB(object):
         weight_values = [remaining[s] for s in strategies]
         return random.choices(strategies, weights=weight_values, k=1)[0]
 
+    @property
+    def _bender_fetch_limit(self):
+        """Number of tracks to request from Spotify per cache fill."""
+        return 5 if self.nest_id != "main" else 20
+
     def _fill_strategy_cache(self, strategy, seed_info):
         """Dispatch to the appropriate fetch method and cache results.
 
@@ -330,13 +362,14 @@ class DB(object):
 
         market = CONF.BENDER_REGIONS[0] if CONF.BENDER_REGIONS else 'US'
         seed_uri = seed_info.get('seed_uri', '') if seed_info else ''
+        limit = self._bender_fetch_limit
 
         if strategy == 'throwback':
             return self._fill_throwback_cache()
         elif strategy == 'genre':
-            uris = self._fetch_genre_tracks(seed_info, market)
+            uris = self._fetch_genre_tracks(seed_info, market, limit)
         elif strategy == 'artist_search':
-            uris = self._fetch_artist_search_tracks(seed_info, market)
+            uris = self._fetch_artist_search_tracks(seed_info, market, limit)
         elif strategy == 'top_tracks':
             uris = self._fetch_top_tracks(seed_info, market)
         elif strategy == 'album':
@@ -352,7 +385,7 @@ class DB(object):
                 continue
             if uri in seen:
                 continue
-            if self._r.get("FILTER|%s" % uri):
+            if self._r.get(self._key("FILTER|%s" % uri)):
                 continue
             seen.add(uri)
             filtered.append(uri)
@@ -362,13 +395,13 @@ class DB(object):
         if not filtered:
             return 0
 
-        cache_key = self._STRATEGY_CACHE_KEYS[strategy]
+        cache_key = self._cache_key(strategy)
         self._r.rpush(cache_key, *filtered)
         self._r.expire(cache_key, 60 * 20)
         logger.debug("Cached %d tracks for strategy %s", len(filtered), strategy)
         return len(filtered)
 
-    def _fetch_genre_tracks(self, seed_info, market):
+    def _fetch_genre_tracks(self, seed_info, market, limit=20):
         """Search Spotify by one of the seed artist's genres."""
         if not seed_info:
             return []
@@ -378,7 +411,7 @@ class DB(object):
         genre = random.choice(genres)
         try:
             results = spotify_client.search(q='genre:"%s"' % genre, type='track',
-                                            limit=20, market=market)
+                                            limit=limit, market=market)
             return [t['uri'] for t in results.get('tracks', {}).get('items', [])]
         except Exception as e:
             if handle_spotify_exception(e):
@@ -386,7 +419,7 @@ class DB(object):
             logger.warning("Error fetching genre tracks for '%s': %s", genre, e)
             return []
 
-    def _fetch_artist_search_tracks(self, seed_info, market):
+    def _fetch_artist_search_tracks(self, seed_info, market, limit=20):
         """Search Spotify by artist name to find collabs/features."""
         if not seed_info:
             return []
@@ -394,7 +427,7 @@ class DB(object):
         if not artist_name:
             return []
         try:
-            results = spotify_client.search(artist_name, limit=20,
+            results = spotify_client.search(artist_name, limit=limit,
                                             type='track', market=market)
             return [t['uri'] for t in results.get('tracks', {}).get('items', [])]
         except Exception as e:
@@ -456,22 +489,22 @@ class DB(object):
             original_user = play.get('user', 'the@echonest.com')
             if not track_uri:
                 continue
-            if self._r.get("FILTER|%s" % track_uri):
+            if self._r.get(self._key("FILTER|%s" % track_uri)):
                 continue
-            pipe.rpush('BENDER|cache:throwback', track_uri)
-            pipe.hset('BENDER|throwback-users', track_uri, original_user)
+            pipe.rpush(self._key('BENDER|cache:throwback'), track_uri)
+            pipe.hset(self._key('BENDER|throwback-users'), track_uri, original_user)
             count += 1
         if count > 0:
             pipe.execute()
-            self._r.expire('BENDER|cache:throwback', 60 * 20)
-            self._r.expire('BENDER|throwback-users', 60 * 20)
+            self._r.expire(self._key('BENDER|cache:throwback'), 60 * 20)
+            self._r.expire(self._key('BENDER|throwback-users'), 60 * 20)
         logger.debug("Cached %d throwback tracks", count)
         return count
 
     def _clear_all_bender_caches(self):
         """Delete all BENDER| cache keys."""
-        keys = list(self._STRATEGY_CACHE_KEYS.values()) + [
-            'BENDER|seed-info', 'BENDER|throwback-users', 'BENDER|next-preview',
+        keys = [self._key(k) for k in self._STRATEGY_CACHE_KEYS.values()] + [
+            self._key('BENDER|seed-info'), self._key('BENDER|throwback-users'), self._key('BENDER|next-preview'),
         ]
         self._r.delete(*keys)
 
@@ -482,14 +515,14 @@ class DB(object):
         Stores result in BENDER|next-preview for benderqueue/benderfilter.
         """
         # Check existing preview
-        preview = self._r.hgetall('BENDER|next-preview')
+        preview = self._r.hgetall(self._key('BENDER|next-preview'))
         if preview and preview.get('trackid'):
             track_uri = preview['trackid']
-            if not self._r.get("FILTER|%s" % track_uri):
+            if not self._r.get(self._key("FILTER|%s" % track_uri)):
                 return track_uri, preview.get('user', 'the@echonest.com'), preview.get('strategy', '')
 
             # Preview is now filtered; clear it
-            self._r.delete('BENDER|next-preview')
+            self._r.delete(self._key('BENDER|next-preview'))
 
         # Use weighted random selection, falling through on failure
         seed_info = None  # lazy-loaded
@@ -500,7 +533,7 @@ class DB(object):
             if not strategy:
                 break
 
-            cache_key = self._STRATEGY_CACHE_KEYS.get(strategy)
+            cache_key = self._cache_key(strategy)
             if not cache_key:
                 tried.add(strategy)
                 continue
@@ -520,8 +553,8 @@ class DB(object):
                 continue
 
             # Skip if filtered — drain filtered tracks from front of cache
-            if self._r.get("FILTER|%s" % track_uri):
-                while track_uri and self._r.get("FILTER|%s" % track_uri):
+            if self._r.get(self._key("FILTER|%s" % track_uri)):
+                while track_uri and self._r.get(self._key("FILTER|%s" % track_uri)):
                     self._r.lpop(cache_key)
                     track_uri = self._r.lindex(cache_key, 0)
                 if not track_uri:
@@ -530,12 +563,12 @@ class DB(object):
 
             # Determine user
             if strategy == 'throwback':
-                user = self._r.hget('BENDER|throwback-users', track_uri) or 'the@echonest.com'
+                user = self._r.hget(self._key('BENDER|throwback-users'), track_uri) or 'the@echonest.com'
             else:
                 user = 'the@echonest.com'
 
             # Store preview
-            self._r.hset('BENDER|next-preview', mapping={
+            self._r.hset(self._key('BENDER|next-preview'), mapping={
                 'trackid': track_uri,
                 'user': user,
                 'strategy': strategy,
@@ -551,9 +584,12 @@ class DB(object):
         Respects USE_BENDER and MAX_BENDER_MINUTES settings.
         """
         min_depth = getattr(CONF, 'MIN_QUEUE_DEPTH', None) or 3
+        # Temporary nests keep a smaller buffer to reduce Spotify API pressure
+        if self.nest_id != "main":
+            min_depth = 1
         if not CONF.USE_BENDER:
             return
-        queue_size = self._r.zcard('MISC|priority-queue')
+        queue_size = self._r.zcard(self._key('MISC|priority-queue'))
         if queue_size >= min_depth:
             return
         needed = min_depth - queue_size
@@ -578,7 +614,8 @@ class DB(object):
 
     def ensure_fill_songs(self):
         """Lazy pre-warm: ensure at least one strategy cache has tracks."""
-        for cache_key in self._STRATEGY_CACHE_KEYS.values():
+        for strategy in self._STRATEGY_CACHE_KEYS:
+            cache_key = self._cache_key(strategy)
             if self._r.llen(cache_key) > 0:
                 return  # At least one cache is warm
 
@@ -609,49 +646,49 @@ class DB(object):
         Returns (user, track_uri) or (None, None) if all strategies exhausted.
         """
         # Check backup queue first (unchanged)
-        song = self._r.lpop('MISC|backup-queue')
+        song = self._r.lpop(self._key('MISC|backup-queue'))
         if song:
-            return self._r.hget('MISC|backup-queue-data', 'user'), song
-        self._r.delete('MISC|backup-queue-data')
+            return self._r.hget(self._key('MISC|backup-queue-data'), 'user'), song
+        self._r.delete(self._key('MISC|backup-queue-data'))
 
         # Consume the preview if one exists — this is the track the UI is showing
-        preview = self._r.hgetall('BENDER|next-preview')
+        preview = self._r.hgetall(self._key('BENDER|next-preview'))
         if preview and preview.get('trackid'):
             track = preview['trackid']
             strategy = preview.get('strategy', '')
             user = preview.get('user', 'the@echonest.com')
 
             # Pop it from the strategy cache
-            cache_key = self._STRATEGY_CACHE_KEYS.get(strategy)
+            cache_key = self._cache_key(strategy)
             if cache_key:
                 self._r.lpop(cache_key)
             if strategy == 'throwback':
-                self._r.hdel('BENDER|throwback-users', track)
-            self._r.delete('BENDER|next-preview')
+                self._r.hdel(self._key('BENDER|throwback-users'), track)
+            self._r.delete(self._key('BENDER|next-preview'))
 
             # Verify it's not filtered since the preview was created
-            if not self._r.get("FILTER|%s" % track):
-                self._r.set('MISC|last-bender-track', track)
+            if not self._r.get(self._key("FILTER|%s" % track)):
+                self._r.set(self._key('MISC|last-bender-track'), track)
                 logger.info("get_fill_song: strategy=%s, track=%s, user=%s (from preview)", strategy, track, user)
                 return user, track
             # If filtered, fall through to normal rotation below
 
         if is_spotify_rate_limited():
             # Throwback doesn't need Spotify API, try it directly
-            track = self._r.lpop('BENDER|cache:throwback')
+            track = self._r.lpop(self._key('BENDER|cache:throwback'))
             if track:
-                user = self._r.hget('BENDER|throwback-users', track) or 'the@echonest.com'
-                self._r.hdel('BENDER|throwback-users', track)
-                self._r.set('MISC|last-bender-track', track)
+                user = self._r.hget(self._key('BENDER|throwback-users'), track) or 'the@echonest.com'
+                self._r.hdel(self._key('BENDER|throwback-users'), track)
+                self._r.set(self._key('MISC|last-bender-track'), track)
                 logger.info("get_fill_song: strategy=throwback, track=%s, user=%s", track, user)
                 return user, track
             # Try to fill throwback cache
             if self._fill_throwback_cache() > 0:
-                track = self._r.lpop('BENDER|cache:throwback')
+                track = self._r.lpop(self._key('BENDER|cache:throwback'))
                 if track:
-                    user = self._r.hget('BENDER|throwback-users', track) or 'the@echonest.com'
-                    self._r.hdel('BENDER|throwback-users', track)
-                    self._r.set('MISC|last-bender-track', track)
+                    user = self._r.hget(self._key('BENDER|throwback-users'), track) or 'the@echonest.com'
+                    self._r.hdel(self._key('BENDER|throwback-users'), track)
+                    self._r.set(self._key('MISC|last-bender-track'), track)
                     logger.info("get_fill_song: strategy=throwback, track=%s, user=%s", track, user)
                     return user, track
             return None, None
@@ -665,7 +702,7 @@ class DB(object):
                 logger.error("Bender exhausted all recommendation strategies")
                 return None, None
 
-            cache_key = self._STRATEGY_CACHE_KEYS[strategy]
+            cache_key = self._cache_key(strategy)
             track = self._r.lpop(cache_key)
 
             # If cache empty, try to fill it
@@ -680,9 +717,9 @@ class DB(object):
                 continue
 
             # Check if track is filtered; drain cache for a clean one
-            while track and self._r.get("FILTER|%s" % track):
+            while track and self._r.get(self._key("FILTER|%s" % track)):
                 if strategy == 'throwback':
-                    self._r.hdel('BENDER|throwback-users', track)
+                    self._r.hdel(self._key('BENDER|throwback-users'), track)
                 track = self._r.lpop(cache_key)
 
             if not track:
@@ -691,19 +728,19 @@ class DB(object):
 
             # Determine user
             if strategy == 'throwback':
-                user = self._r.hget('BENDER|throwback-users', track) or 'the@echonest.com'
-                self._r.hdel('BENDER|throwback-users', track)
+                user = self._r.hget(self._key('BENDER|throwback-users'), track) or 'the@echonest.com'
+                self._r.hdel(self._key('BENDER|throwback-users'), track)
             else:
                 user = 'the@echonest.com'
 
-            self._r.set('MISC|last-bender-track', track)
+            self._r.set(self._key('MISC|last-bender-track'), track)
             logger.info("get_fill_song: strategy=%s, track=%s, user=%s", strategy, track, user)
             return user, track
 
     def bender_streak(self):
         now = self.player_now()
         try:
-            then = pickle_load_b64(self._r.get('MISC|bender_streak_start'))
+            then = pickle_load_b64(self._r.get(self._key('MISC|bender_streak_start')))
             if then is None:
                 then = _now()
             logger.debug("bender streak is %s seconds, now %s then %s" % ((now - then).total_seconds(), now, then))
@@ -716,17 +753,17 @@ class DB(object):
 
     def master_player(self):
         id = str(uuid.uuid4())
-        n = self._r.setnx('MISC|master-player', id)
+        n = self._r.setnx(self._key('MISC|master-player'), id)
         while not n:
             time.sleep(5)
-            n = self._r.setnx('MISC|master-player', id)
-        self._r.expire('MISC|master-player', 5)
+            n = self._r.setnx(self._key('MISC|master-player'), id)
+        self._r.expire(self._key('MISC|master-player'), 5)
         #I'm the player.
         logger.info('Grabbing player')
         while True:
 
             song = self.get_now_playing()
-            finish_on = self._r.get('MISC|current-done')
+            finish_on = self._r.get(self._key('MISC|current-done'))
             if finish_on and pickle_load_b64(finish_on) > self.player_now():
                 done = pickle_load_b64(finish_on)
             else:
@@ -735,7 +772,7 @@ class DB(object):
 
                 song = self.pop_next()
                 if not song:
-                    logger.debug("streak start set %s"%self._r.setnx('MISC|bender_streak_start', pickle_dump_b64(self.player_now())))
+                    logger.debug("streak start set %s"%self._r.setnx(self._key('MISC|bender_streak_start'), pickle_dump_b64(self.player_now())))
                     if (not CONF.USE_BENDER) or (self.bender_streak() <= CONF.MAX_BENDER_MINUTES * 60):
                         got_song = False
                         while not got_song:
@@ -766,41 +803,41 @@ class DB(object):
             id = song['trackid']
             expire_on = int((done - self.player_now()).total_seconds())
 
-            self._r.setex('MISC|current-done',
+            self._r.setex(self._key('MISC|current-done'),
                           expire_on,
                           pickle_dump_b64(done))
-            self._r.set('MISC|started-on',
+            self._r.set(self._key('MISC|started-on'),
                           self.player_now().isoformat())
             while self.player_now() < done:
-                paused = self._r.get('MISC|paused')
+                paused = self._r.get(self._key('MISC|paused'))
                 if paused:
                     logger.info("paused at %s", self.player_now())
                     while paused:
                         time.sleep(1)
-                        self._r.expire('MISC|master-player', 10)
-                        paused = self._r.get('MISC|paused')
+                        self._r.expire(self._key('MISC|master-player'), 10)
+                        paused = self._r.get(self._key('MISC|paused'))
                     # Recalculate done: player_now didn't advance while paused,
                     # so the remaining time is still correct, but we need to
                     # refresh the MISC|current-done TTL since real time passed.
                     remaining = int((done - self.player_now()).total_seconds())
                     done = self.player_now() + datetime.timedelta(seconds=remaining, milliseconds=500)
                     expire_on = max(remaining, 1)
-                    self._r.setex('MISC|current-done', expire_on, pickle_dump_b64(done))
+                    self._r.setex(self._key('MISC|current-done'), expire_on, pickle_dump_b64(done))
                     logger.info("unpaused, %d seconds remaining", remaining)
-                self._r.expire('MISC|master-player', 5)
-                if self._r.get('MISC|force-jump'):
-                    self._r.delete('MISC|force-jump')
+                self._r.expire(self._key('MISC|master-player'), 5)
+                if self._r.get(self._key('MISC|force-jump')):
+                    self._r.delete(self._key('MISC|force-jump'))
                     break
                 self._add_now(1)
                 time.sleep(1)
                 remaining = int((done-self.player_now()).total_seconds())
                 self._msg('pp|{0}|{1}|{2}'.format(song['src'], id, song['duration'] - remaining))
-            self._r.delete('MISC|current-done')
-            self._r.delete('QUEUE|VOTE|{0}'.format(id))
-            self._r.delete('QUEUE|{0}'.format(id))
+            self._r.delete(self._key('MISC|current-done'))
+            self._r.delete(self._key('QUEUE|VOTE|{0}'.format(id)))
+            self._r.delete(self._key('QUEUE|{0}'.format(id)))
 
     def player_now(self):
-        t = self._r.get('MISC|player-now')
+        t = self._r.get(self._key('MISC|player-now'))
         if t:
             try:
 #                logger.debug("player-now %s" % pickle_load_b64(t))
@@ -816,7 +853,7 @@ class DB(object):
     def _add_now(self, seconds):
         new_t = self.player_now() + datetime.timedelta(seconds=seconds)
 #        logger.debug("updating time %s", new_t)
-        self._r.setex('MISC|player-now', 12*3600, pickle_dump_b64(new_t))
+        self._r.setex(self._key('MISC|player-now'), 12*3600, pickle_dump_b64(new_t))
 
     def _song_keywords(self, title):
         return set(x for x in title.lower().split()
@@ -893,17 +930,18 @@ class DB(object):
         return 'http://www.gravatar.com/avatar/{0}?d=monsterid&s=180'.format(grav)
 
     def _add_song(self, userid, song, force_first, penalty=0):
-        id = self._r.incr('MISC|playlist-plays')
+        self._check_nest_active()
+        id = self._r.incr(self._key('MISC|playlist-plays'))
 
         song.update(dict(background_color='222222',
                         foreground_color='F0F0FF',
                         user=userid, id = id, vote=0))
         self.set_song_in_queue(id, song)
-        s_id = 'QUEUE|VOTE|{0}'.format(id)
+        s_id = self._key('QUEUE|VOTE|{0}'.format(id))
         self._r.sadd(s_id, userid)
         self._r.expire(s_id, 24*60*60)
         score = self._score_track(userid, force_first, song) + penalty
-        self._r.zadd('MISC|priority-queue', {str(id): score})
+        self._r.zadd(self._key('MISC|priority-queue'), {str(id): score})
         self._msg('playlist_update')
         return str(id)
 
@@ -1008,7 +1046,7 @@ class DB(object):
             logger.error("Error adding YouTube song %s: %s", trackid, str(e))
 
     def get_fill_info(self, trackid):
-        key = 'FILL-INFO|{0}'.format(trackid)
+        key = self._key('FILL-INFO|{0}'.format(trackid))
 
         raw_song = self._r.hgetall(key)
         if raw_song:
@@ -1192,7 +1230,8 @@ class DB(object):
         return jammed
 
     def jam(self, id, userid):
-        queued_song_jams_key = 'QUEUEJAM|{0}'.format(id)
+        self._check_nest_active()
+        queued_song_jams_key = self._key('QUEUEJAM|{0}'.format(id))
         userid = userid.lower()
         if self.already_jammed(queued_song_jams_key, userid):
             self.remove_jam(queued_song_jams_key, userid)
@@ -1200,25 +1239,26 @@ class DB(object):
             self.add_jam(queued_song_jams_key, userid)
         self._r.expire(queued_song_jams_key, 24*60*60)
 
-        if self._r.zrank('MISC|priority-queue', id) is not None:
+        if self._r.zrank(self._key('MISC|priority-queue'), id) is not None:
             self._msg('playlist_update')
         else:
             self._msg('now_playing_update')
         if self.num_jams(queued_song_jams_key) >= CONF.FREE_AIRHORN:
             user = self.get_now_playing()['user']
-            self._r.sadd('FREEHORN_{0}'.format(user), id)
+            self._r.sadd(self._key('FREEHORN_{0}'.format(user)), id)
             self._msg('update_freehorn')
 
 
     def add_comment(self, id, userid, text):
-        comments_key = 'COMMENTS|{0}'.format(id)
+        self._check_nest_active()
+        comments_key = self._key('COMMENTS|{0}'.format(id))
         self._r.zadd(comments_key, {"{0}||{1}".format(userid.lower(), text): int(time.time())})
         self._r.expire(comments_key, 24*60*60)
         logger.info('comment by {0} at {1}: "{2}"'.format(userid, time.ctime(), text))
         self._msg('playlist_update')
 
     def get_comments(self, id):
-        key = 'COMMENTS|{0}'.format(id)
+        key = self._key('COMMENTS|{0}'.format(id))
         raw_comments = self._r.zrange(key, 0, self._r.zcard(key), withscores=True)
         comments = []
         for text, secs in raw_comments:
@@ -1232,46 +1272,48 @@ class DB(object):
 
     def benderqueue(self, trackId, userid):
         """Queue the previewed Bender song (user clicked 'queue' on preview card)."""
-        preview = self._r.hgetall('BENDER|next-preview')
+        self._check_nest_active()
+        preview = self._r.hgetall(self._key('BENDER|next-preview'))
         if not preview or preview.get('trackid') != trackId:
             logger.warning("benderqueue mismatch: trackId=%s preview=%s", trackId, preview)
             return
 
         strategy = preview.get('strategy', '')
-        cache_key = self._STRATEGY_CACHE_KEYS.get(strategy)
+        cache_key = self._cache_key(strategy)
         if cache_key:
             self._r.lpop(cache_key)
 
         original_user = preview.get('user', 'the@echonest.com')
         if strategy == 'throwback':
-            self._r.hdel('BENDER|throwback-users', trackId)
+            self._r.hdel(self._key('BENDER|throwback-users'), trackId)
 
-        self._r.delete('BENDER|next-preview')
+        self._r.delete(self._key('BENDER|next-preview'))
         newId = self.add_spotify_song(userid, trackId)
         self.jam(newId, original_user)
 
     def benderfilter(self, trackId, userid):
         """Filter a Bender preview song and rotate to the next one."""
-        preview = self._r.hgetall('BENDER|next-preview')
+        self._check_nest_active()
+        preview = self._r.hgetall(self._key('BENDER|next-preview'))
 
         # Clean up preview/cache state if it matches the filtered track
         if preview and preview.get('trackid') == trackId:
             strategy = preview.get('strategy', '')
-            cache_key = self._STRATEGY_CACHE_KEYS.get(strategy)
+            cache_key = self._cache_key(strategy)
             if cache_key:
                 self._r.lpop(cache_key)
             if strategy == 'throwback':
-                self._r.hdel('BENDER|throwback-users', trackId)
+                self._r.hdel(self._key('BENDER|throwback-users'), trackId)
 
         # Always clear the preview so a fresh one is generated on next get_additional_src
-        self._r.delete('BENDER|next-preview')
-        self._r.setex('FILTER|%s' % trackId, CONF.BENDER_FILTER_TIME, 1)
+        self._r.delete(self._key('BENDER|next-preview'))
+        self._r.setex(self._key('FILTER|%s' % trackId), CONF.BENDER_FILTER_TIME, 1)
         self._msg('playlist_update')
         logger.info("benderfilter %s by %s", trackId, userid)
 
 
     def get_song_from_queue(self, id):
-        key = 'QUEUE|{0}'.format(id)
+        key = self._key('QUEUE|{0}'.format(id))
         data = self._r.hgetall(key)
         if 'duration' in data:
             try:
@@ -1282,12 +1324,12 @@ class DB(object):
             data['auto'] = (data['auto'] == 'True')
         else:
             data['auto'] = False
-        data['jam'] = self.get_jams('QUEUEJAM|{0}'.format(id))
+        data['jam'] = self.get_jams(self._key('QUEUEJAM|{0}'.format(id)))
         data['comments'] = self.get_comments(id)
         return data or {}
 
     def set_song_in_queue(self, id, data):
-        key = 'QUEUE|{0}'.format(id)
+        key = self._key('QUEUE|{0}'.format(id))
         # Redis requires string values - serialize complex types
         serialized_data = {}
         for k, v in data.items():
@@ -1305,15 +1347,17 @@ class DB(object):
         self._r.expire(key, 24*60*60)
 
     def nuke_queue(self, email):
-        self._r.zremrangebyrank('MISC|priority-queue', 0, -1)
+        self._check_nest_active()
+        self._r.zremrangebyrank(self._key('MISC|priority-queue'), 0, -1)
         self._msg('playlist_update')
 
     def kill_song(self, id, email):
-        self._r.zrem('MISC|priority-queue', id)
+        self._check_nest_active()
+        self._r.zrem(self._key('MISC|priority-queue'), id)
         self._msg('playlist_update')
 
     def get_additional_src(self):
-        raw = self._r.hgetall('MISC|backup-queue-data')
+        raw = self._r.hgetall(self._key('MISC|backup-queue-data'))
         if not raw:
             # Use _peek_next_fill_song to find the next preview
             for _ in range(5):
@@ -1347,15 +1391,15 @@ class DB(object):
                     logger.error('song not available: %s', track_uri)
                     logger.error('backtrace: %s', traceback.format_exc())
                     # Clear preview and pop from cache so we move to next
-                    preview = self._r.hgetall('BENDER|next-preview')
+                    preview = self._r.hgetall(self._key('BENDER|next-preview'))
                     if preview:
                         strat = preview.get('strategy', '')
-                        ck = self._STRATEGY_CACHE_KEYS.get(strat)
+                        ck = self._cache_key(strat)
                         if ck:
                             self._r.lpop(ck)
                         if strat == 'throwback':
-                            self._r.hdel('BENDER|throwback-users', track_uri)
-                        self._r.delete('BENDER|next-preview')
+                            self._r.hdel(self._key('BENDER|throwback-users'), track_uri)
+                        self._r.delete(self._key('BENDER|next-preview'))
                     continue
 
             # Fallback when fill songs are unavailable
@@ -1366,7 +1410,7 @@ class DB(object):
         return raw
 
     def get_queued(self):
-        songs = self._r.zrange('MISC|priority-queue', 0, -1, withscores=True)
+        songs = self._r.zrange(self._key('MISC|priority-queue'), 0, -1, withscores=True)
         rv = []
         for k in songs:
             data = self.get_song_from_queue(k[0])
@@ -1379,31 +1423,31 @@ class DB(object):
 
     def pop_next(self):
         while True:
-            song = self._r.zrange('MISC|priority-queue', 0, 0)
+            song = self._r.zrange(self._key('MISC|priority-queue'), 0, 0)
             if not song:
-                self._r.delete('MISC|now-playing')
+                self._r.delete(self._key('MISC|now-playing'))
                 return {}
             song = song[0]
-            self._r.zrem('MISC|priority-queue', song)
+            self._r.zrem(self._key('MISC|priority-queue'), song)
             data = self.get_song_from_queue(song)
 
             if (data and data['src'] == 'spotify'
                     and data['user'] != 'the@echonest.com'):
                 #got something from a human, set last-queued and clear bender caches
-                self._r.set('MISC|last-queued', data['trackid'])
+                self._r.set(self._key('MISC|last-queued'), data['trackid'])
                 self._clear_all_bender_caches()
                 try:
                     self.ensure_fill_songs()
                 except Exception as e:
                     logger.warning("Failed to ensure fill songs: %s", e)
-                self._r.delete('MISC|bender_streak_start')
+                self._r.delete(self._key('MISC|bender_streak_start'))
 
             if not data:
                 continue
 
-            self._r.expire('QUEUE|{0}'.format(song), 3*60*60)
-            self._r.setex('MISC|now-playing', 2*60*60, song)
-            self._r.setex('MISC|now-playing-done', data['duration'], song)
+            self._r.expire(self._key('QUEUE|{0}'.format(song)), 3*60*60)
+            self._r.setex(self._key('MISC|now-playing'), 2*60*60, song)
+            self._r.setex(self._key('MISC|now-playing-done'), data['duration'], song)
             self._msg('now_playing_update')
             return data
 
@@ -1416,7 +1460,7 @@ class DB(object):
         '''
         end_time = None
         if use_estimate:
-            end_time = self._r.get('MISC|current-done')
+            end_time = self._r.get(self._key('MISC|current-done'))
             if end_time:
                 end_time = pickle_load_b64(end_time).isoformat()
 
@@ -1426,42 +1470,43 @@ class DB(object):
 
     def get_now_playing(self):
         rv = {}
-        song = self._r.get('MISC|now-playing')
+        song = self._r.get(self._key('MISC|now-playing'))
         if song:
             rv = self.get_song_from_queue(song)
             if not rv or not rv.get('trackid'):
                 # Song data was cleaned up but MISC|now-playing is stale
-                self._r.delete('MISC|now-playing')
+                self._r.delete(self._key('MISC|now-playing'))
                 rv = {}
             else:
-                p_endtime = self._r.get('MISC|current-done')
-                rv['starttime'] = self._r.get('MISC|started-on')
+                p_endtime = self._r.get(self._key('MISC|current-done'))
+                rv['starttime'] = self._r.get(self._key('MISC|started-on'))
                 rv['endtime'] = self.song_end_time(use_estimate=True)
                 rv['pos'] = 0
                 if p_endtime:
                     remaining = (pickle_load_b64(p_endtime) - self.player_now()).total_seconds()
                     rv['pos'] = int(max(0,rv['duration'] - remaining))
 
-        paused = self._r.get('MISC|paused')
+        paused = self._r.get(self._key('MISC|paused'))
         rv['paused'] = False
         if paused:
             rv['paused'] = True
         return rv
 
     def get_last_played(self):
-        return self._r.get('MISC|last-played')
+        return self._r.get(self._key('MISC|last-played'))
 
     def get_current_airhorns(self):
-        return self._r.lrange('AIRHORNS', 0, -1)
+        return self._r.lrange(self._key('AIRHORNS'), 0, -1)
 
     def vote(self, userid, id, up):
+        self._check_nest_active()
         norm_color = [34, 34, 34]
         base_hot = [34, 34, 34]
         hot_color = [68, 68, 68]
         cold_color = [0, 0, 0]
         user = self.get_song_from_queue(id).get('user', '')
         self_down = user == userid and not up
-        s_id = 'QUEUE|VOTE|{0}'.format(id)
+        s_id = self._key('QUEUE|VOTE|{0}'.format(id))
         if (not self_down and
                 (self._r.sismember(s_id, userid)
                  and userid.lower() not in CONF.SPECIAL_PEOPLE)):
@@ -1469,7 +1514,7 @@ class DB(object):
             return
 
         self._r.sadd(s_id, userid)
-        exist_rank = self._r.zrank('MISC|priority-queue', id)
+        exist_rank = self._r.zrank(self._key('MISC|priority-queue'), id)
         logger.info("existing rank is:" + str(exist_rank))
         if up:
             low_rank = exist_rank - 2
@@ -1479,14 +1524,14 @@ class DB(object):
         high_rank = low_rank + 1
         logger.info("low_rank:" + str(low_rank))
         logger.info("high_rank:" + str(high_rank))
-        ids = self._r.zrange('MISC|priority-queue', max(low_rank, 0), high_rank)
+        ids = self._r.zrange(self._key('MISC|priority-queue'), max(low_rank, 0), high_rank)
         logger.info("ids:" + str(ids))
         if len(ids) == 0:
             return #nothing to do here
         low_id = ids[0]
-        current_score = self._r.zscore('MISC|priority-queue', id)
+        current_score = self._r.zscore(self._key('MISC|priority-queue'), id)
         logger.info("current_score:" + str(current_score))
-        low_score = self._r.zscore('MISC|priority-queue', low_id)
+        low_score = self._r.zscore(self._key('MISC|priority-queue'), low_id)
         logger.info("low_score:" + str(low_score))
         if len(ids) == 1:
             if low_rank == -1:
@@ -1497,11 +1542,11 @@ class DB(object):
                 new_score = low_score + 120.0
         else:
             high_id = ids[1]
-            high_score = self._r.zscore('MISC|priority-queue', high_id)
+            high_score = self._r.zscore(self._key('MISC|priority-queue'), high_id)
             logger.info("high_score:" + str(high_score))
             new_score = (low_score + high_score) / 2
 
-        queue_key = 'QUEUE|{0}'.format(id)
+        queue_key = self._key('QUEUE|{0}'.format(id))
 
         if up:
             self._r.hincrby(queue_key, "vote", 1)
@@ -1540,27 +1585,30 @@ class DB(object):
 
         size = new_score - current_score
         logger.info("size:" + str(size))
-        self._r.zincrby('MISC|priority-queue', size, id)
+        self._r.zincrby(self._key('MISC|priority-queue'), size, id)
         self._msg('playlist_update')
 
     def kill_playing(self, email):
-        self._r.set('MISC|force-jump', 1)
+        self._check_nest_active()
+        self._r.set(self._key('MISC|force-jump'), 1)
 
     def pause(self, email):
-        self._r.set('MISC|paused', 1)
+        self._check_nest_active()
+        self._r.set(self._key('MISC|paused'), 1)
         self._msg('now_playing_update')
 
     def unpause(self, email):
-        self._r.delete('MISC|paused')
+        self._check_nest_active()
+        self._r.delete(self._key('MISC|paused'))
         # If the song timer expired while paused, clear stale now-playing
         # so the player loop advances to the next track immediately.
-        now_playing_id = self._r.get('MISC|now-playing')
-        current_done = self._r.get('MISC|current-done')
+        now_playing_id = self._r.get(self._key('MISC|now-playing'))
+        current_done = self._r.get(self._key('MISC|current-done'))
         if now_playing_id and not current_done:
-            song_data = self._r.hgetall('QUEUE|{}'.format(now_playing_id))
+            song_data = self._r.hgetall(self._key('QUEUE|{}'.format(now_playing_id)))
             if not song_data or not song_data.get('trackid'):
                 # Song data is gone, clean up the stale reference
-                self._r.delete('MISC|now-playing')
+                self._r.delete(self._key('MISC|now-playing'))
                 logger.info("unpause: cleared stale now-playing %s (no song data)", now_playing_id)
         self._msg('now_playing_update')
 
@@ -1578,13 +1626,13 @@ class DB(object):
         popped = 0
         for horn in horns:
             if horn['when'] < expire:
-                self._r.lpop('AIRHORNS')
+                self._r.lpop(self._key('AIRHORNS'))
                 popped += 1
                 if popped >= CONF.AIRHORN_EXPIRE_COUNT or len(horns) - popped < CONF.AIRHORN_LIST_MIN_LEN:
                     break
 
     def get_horns(self):
-        raw = self._r.lrange('AIRHORNS', 0, -1)
+        raw = self._r.lrange(self._key('AIRHORNS'), 0, -1)
         rv = []
         for x in raw:
             rv.append(json.loads(x))
@@ -1601,10 +1649,11 @@ class DB(object):
                     when=_now().isoformat(),
                     free=free, user=userid, artist=playing.get('artist', ''),
                     title=playing.get('title', ''))
-        self._r.rpush('AIRHORNS', json.dumps(horn))
+        self._r.rpush(self._key('AIRHORNS'), json.dumps(horn))
         self._msg('do_airhorn|0.4|%s' % name)  # volume of airhorn - may need to be tweaked, random choice for airhorn
 
     def airhorn(self, userid, name):
+        self._check_nest_active()
         self.trim_horns()
         horns = self.get_horns()
         if len([x for x in horns if not x['free']]) >= CONF.AIRHORN_MAX:
@@ -1612,42 +1661,44 @@ class DB(object):
         self._do_horn(userid, False, name)
 
     def free_airhorn(self, userid):
+        self._check_nest_active()
         self.trim_horns()
-        s = self._r.spop('FREEHORN_{0}'.format(userid))
+        s = self._r.spop(self._key('FREEHORN_{0}'.format(userid)))
         if s:
             self._msg('update_freehorn')
             self._do_horn(userid, True)
 
     def get_free_horns(self, userid):
-        return self._r.scard('FREEHORN_{0}'.format(userid))
+        return self._r.scard(self._key('FREEHORN_{0}'.format(userid)))
 
     def get_volume(self):
-        if not self._r.exists('MISC|volume'):
-            self._r.set('MISC|volume', 95)
+        if not self._r.exists(self._key('MISC|volume')):
+            self._r.set(self._key('MISC|volume'), 95)
 
-        rv = int(self._r.get('MISC|volume'))
+        rv = int(self._r.get(self._key('MISC|volume')))
         return rv
 
     def set_volume(self, new_vol):
+        self._check_nest_active()
         new_vol = max(0, int(new_vol))
 #        print new_vol
         new_vol = min(100, new_vol)
         print("set_volume", new_vol)
-        self._r.set('MISC|volume', new_vol)
+        self._r.set(self._key('MISC|volume'), new_vol)
         self._msg('v|'+str(new_vol))
         logger.info('set_volume in pct %s', new_vol)
         return new_vol
 
     def _msg(self, msg):
-        self._r.publish('MISC|update-pubsub', msg)
+        self._r.publish(self._key('MISC|update-pubsub'), msg)
 
     def try_login(self, email, passwd):
         email = email.lower()
-        d = self._r.hget('MISC|guest-login-expire', email)
+        d = self._r.hget(self._key('MISC|guest-login-expire'), email)
         if not d or pickle_load_b64(d) < _now():
-            self._r.hdel('MISC|guest-login', email)
+            self._r.hdel(self._key('MISC|guest-login'), email)
             return False
-        full_pass = self._r.hget('MISC|guest-login', email)
+        full_pass = self._r.hget(self._key('MISC|guest-login'), email)
         if full_pass and (full_pass == passwd):
             return email
         return None
@@ -1670,8 +1721,8 @@ class DB(object):
                     if 4 < len(x) < 8]
         random.shuffle(words)
         passwd = ''.join(x.title() for x in words[:2])
-        self._r.hset('MISC|guest-login-expire', email, pickle_dump_b64(expires))
-        self._r.hset('MISC|guest-login', email, passwd)
+        self._r.hset(self._key('MISC|guest-login-expire'), email, pickle_dump_b64(expires))
+        self._r.hset(self._key('MISC|guest-login'), email, passwd)
         self.send_email(email, "Welcome to Andre!",
                         render_template('welcome_email.txt',
                             expires=expires, email=email,
@@ -1679,7 +1730,7 @@ class DB(object):
 
     def _airhorners_for_song_log(self, id):
         found_airhorns = []
-        stored_airhorns = self._r.lrange('AIRHORNS', 0, -1)
+        stored_airhorns = self._r.lrange(self._key('AIRHORNS'), 0, -1)
         # list not set because airhorn stattos may want to see when users do multiple horns on a song
         for stored_airhorn in stored_airhorns:
             aj = json.loads(stored_airhorn)
@@ -1696,11 +1747,11 @@ class DB(object):
 
         id = song['id']
         song['endtime'] = self.song_end_time(False)
-        song['jam'] = self.get_jams('QUEUEJAM|{0}'.format(id))
+        song['jam'] = self.get_jams(self._key('QUEUEJAM|{0}'.format(id)))
         song['airhorn'] = self._airhorners_for_song_log(id)
         cleaned_song = _clean_song(song)
         song_json = json.dumps(cleaned_song, sort_keys=True)
-        self._r.set('MISC|last-played', song_json)
+        self._r.set(self._key('MISC|last-played'), song_json)
         _log_play(song_json)
         self._h.add_play(song_json)
 
