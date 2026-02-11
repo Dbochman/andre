@@ -11,7 +11,7 @@ Tests are marked `@pytest.mark.xfail` and will pass once implementation lands.
 
 ```bash
 # Run all nest tests (expect xfail until implemented)
-SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py -v
+SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py -v -rx
 
 # Run a specific class
 SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestRedisKeyPrefixing -v
@@ -87,6 +87,7 @@ These are the test classes that should flip from `xfail` to passing:
 **Commit:** `feat(nests): add _key() method and nest_id to DB class`
 **Verify:** `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestRedisKeyPrefixing -v`
 - `test_db_key_prefixing` — asserts `DB(nest_id="X7K2P")._key("MISC|now-playing") == "NEST:X7K2P|MISC|now-playing"`
+**Done when:** `DB.__init__` accepts `nest_id`, `_key()` exists, and `TestRedisKeyPrefixing` passes.
 
 ### T2: Refactor all Redis key references in DB class to use `_key()`
 **File:** `db.py`
@@ -99,6 +100,7 @@ These are the test classes that should flip from `xfail` to passing:
 - The pub/sub channel `MISC|update-pubsub` MUST be wrapped so each nest gets its own channel
 **Commit:** `feat(nests): scope all DB Redis keys to nest_id via _key()`
 **Verify:** `TestRedisKeyPrefixing` should still pass. Also run existing tests to check for regressions.
+**Done when:** all DB Redis ops are scoped via `_key()` (except global keys) and main-nest behavior remains unchanged.
 
 ### T3: Write key migration script + helpers module
 **Files:** `migrate_keys.py` (new), `nests.py` (new — helper functions)
@@ -128,6 +130,7 @@ These are the test classes that should flip from `xfail` to passing:
 - `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestPubSubChannels -v`
 - `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestMembershipHeartbeat -v`
 - `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestNestCleanupLogic -v`
+**Done when:** helper functions exist in `nests.py`, `migrate()` exists, and the four helper tests pass.
 
 ### T4: Update pub/sub subscription in app.py
 **File:** `app.py`
@@ -139,6 +142,7 @@ These are the test classes that should flip from `xfail` to passing:
 - Can import `pubsub_channel` from `nests.py` module
 **Commit:** `feat(nests): scope pub/sub channels to nest_id`
 **Verify:** Run existing tests to verify no regressions
+**Done when:** SSE and WebSocket subscribe to `pubsub_channel(nest_id)` without breaking updates.
 
 ### T5: Add nest config options
 **Files:** `config.yaml`, `config.py`
@@ -155,6 +159,7 @@ These are the test classes that should flip from `xfail` to passing:
 - Add to `ENV_OVERRIDES` in `config.py`: `'NESTS_ENABLED'`
 **Commit:** `feat(nests): add nest configuration options`
 **Verify:** Verify config loads correctly
+**Done when:** new config values are available via `CONF.*` with defaults matching the plan.
 
 ---
 
@@ -180,6 +185,7 @@ These are the test classes that should flip from `xfail` to passing:
 - `TestMembershipHeartbeat` should pass (uses `members_key`/`member_key` from `nests.py`)
 - `TestNestManagerCRUD` should pass (imports `nests.NestManager`)
 - `TestWebSocketMembership` should pass (imports `nests.join_nest`/`nests.leave_nest`)
+**Done when:** `nests.NestManager` CRUD works and `TestNestManagerCRUD` passes.
 
 ### T7: Add nest API routes
 **File:** `app.py`
@@ -192,6 +198,7 @@ These are the test classes that should flip from `xfail` to passing:
 - `DELETE /api/nests/<code>` — delete nest (creator only)
 - **Auth:** These routes use session auth (standard `before_request` gate) OR `@require_api_token` for API clients. Do NOT add `/api/nests` to `SAFE_PARAM_PATHS` — that would bypass session auth and make them public
 - Return proper JSON responses with status codes
+- Use error shapes from `docs/NESTS_API_ERRORS.md`
 **Commit:** `feat(nests): add REST API routes for nest CRUD`
 **Verify:** `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestNestsAPI -v`
 - `test_create_nest_returns_code` — POST /api/nests → 200 with `code` (5 chars)
@@ -199,6 +206,7 @@ These are the test classes that should flip from `xfail` to passing:
 - `test_patch_nest_name` — PATCH /api/nests/{code} → 200/403/404
 - `test_create_nest_free_cap_error_shape` — if 403/429, error body has `nest_limit_reached`
 - `test_rate_limit_shape` — if 429, error has correct shape
+**Done when:** `TestNestsAPI` and `TestNestAuthGating` pass and error payloads match the doc.
 
 ### T8: Add `/nest/<code>` page route
 **File:** `app.py`
@@ -208,6 +216,7 @@ These are the test classes that should flip from `xfail` to passing:
 - **Auth:** Do NOT add `/nest/` to `SAFE_PARAM_PATHS`. Nest pages require Google auth like everything else. The flow is: visit `echone.st/X7K2P` → redirect to `/nest/X7K2P` → Google login gate → render nest page. This is consistent with the existing app model where all pages require authentication.
 **Commit:** `feat(nests): add /nest/<code> page route`
 **Verify:** Part of `TestNestsAPI` tests
+**Done when:** `/nest/<code>` requires auth and renders nest context on success.
 
 ### T9: WebSocket nest routing + membership heartbeat
 **File:** `app.py`
@@ -228,6 +237,7 @@ These are the test classes that should flip from `xfail` to passing:
   - On disconnect: delete the member key AND SREM from MEMBERS set
 **Commit:** `feat(nests): route WebSocket connections to specific nests with heartbeat`
 **Verify:** Hard to test via pytest (WebSocket mocking). Verify manually if possible. `TestMembershipHeartbeat` tests the key format helpers.
+**Done when:** `refresh_member_ttl()` is called periodically and stale members no longer block cleanup.
 
 ### T10: Add nest cleanup to master_player
 **Files:** `master_player.py`, `db.py`
@@ -245,6 +255,7 @@ These are the test classes that should flip from `xfail` to passing:
 - `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestNestCleanupLogic -v`
 - `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestMasterPlayerMultiNest -v`
   - `test_master_player_iterates_nests` — asserts `master_player_tick_all` is callable
+**Done when:** `master_player_tick_all()` exists and cleanup deletes only inactive empty nests.
 
 ---
 
