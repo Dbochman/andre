@@ -8,32 +8,52 @@ import time
 import gevent
 
 from db import DB
-from nests import NestManager, should_delete_nest, members_key
+from nests import NestManager, should_delete_nest, count_active_members
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
-def master_player_tick_all(nest_manager=None):
-    """Run one master_player tick for every active nest.
+def master_player_tick_all(nest_manager=None, poll_interval=5):
+    """Supervisor loop: discover nests and keep a player greenlet per nest.
 
-    Spawns a greenlet per nest so they run concurrently. Each greenlet
-    creates its own DB instance scoped to that nest and calls master_player().
+    Every *poll_interval* seconds the loop re-fetches the nest list, spawns
+    greenlets for newly discovered nests, kills greenlets for removed nests,
+    and cleans up dead greenlets.
 
     Args:
         nest_manager: Optional NestManager instance. If None, creates one.
+        poll_interval: Seconds between nest-list refreshes (default 5).
     """
     if nest_manager is None:
         nest_manager = NestManager()
 
-    nests = nest_manager.list_nests()
-    greenlets = []
-    for nest_id, _meta in nests:
-        g = gevent.spawn(_run_nest_player, nest_id)
-        greenlets.append(g)
+    active_greenlets = {}  # nest_id -> gevent.Greenlet
 
-    # Wait for all nest players (they run indefinitely)
-    gevent.joinall(greenlets)
+    while True:
+        try:
+            current_nests = {nid for nid, _ in nest_manager.list_nests()}
+
+            # Spawn for new nests
+            for nid in current_nests - set(active_greenlets):
+                logger.info("Discovered new nest %s — spawning player", nid)
+                active_greenlets[nid] = gevent.spawn(_run_nest_player, nid)
+
+            # Kill greenlets for removed nests
+            for nid in set(active_greenlets) - current_nests:
+                logger.info("Nest %s removed — killing player greenlet", nid)
+                active_greenlets.pop(nid).kill()
+
+            # Clean up dead greenlets so they can be re-spawned next cycle
+            for nid in list(active_greenlets):
+                if active_greenlets[nid].dead:
+                    logger.warning("Player greenlet for nest %s died — will respawn", nid)
+                    del active_greenlets[nid]
+
+        except Exception:
+            logger.exception("Error in master_player supervisor loop")
+
+        gevent.sleep(poll_interval)
 
 
 def _run_nest_player(nest_id):
@@ -71,9 +91,8 @@ def nest_cleanup_loop(nest_manager=None, interval_seconds=60):
                 if metadata.get('is_main'):
                     continue
 
-                # Count active members
-                mkey = members_key(nest_id)
-                member_count = nest_manager._r.scard(mkey)
+                # Count active members (prunes stale entries from MEMBERS set)
+                member_count = count_active_members(nest_manager._r, nest_id)
 
                 # Count queue size
                 queue_key = f"NEST:{nest_id}|MISC|priority-queue"
@@ -103,16 +122,12 @@ def main():
         d.master_player()
         return
 
-    # Spawn cleanup loop in a greenlet
-    cleanup_greenlet = gevent.spawn(nest_cleanup_loop, nest_manager=nm, interval_seconds=60)
-
-    # Run master player for all nests
-    try:
-        master_player_tick_all(nest_manager=nm)
-    except Exception:
-        logger.exception("master_player_tick_all failed")
-    finally:
-        cleanup_greenlet.kill()
+    # Both loops run forever — run them as concurrent greenlets
+    greenlets = [
+        gevent.spawn(master_player_tick_all, nest_manager=nm),
+        gevent.spawn(nest_cleanup_loop, nest_manager=nm, interval_seconds=60),
+    ]
+    gevent.joinall(greenlets)
 
 
 if __name__ == '__main__':

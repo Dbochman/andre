@@ -132,10 +132,27 @@ def _handle_websocket():
     return ''
 
 def _handle_volume_websocket():
-    """Handle volume WebSocket connections."""
+    """Handle volume WebSocket connections.
+
+    Supports:
+      /volume       -> nest_id="main"
+      /volume/<id>  -> nest_id=<id> (validated via NestManager)
+    """
     if request.environ.get('wsgi.websocket') is None:
         return 'WebSocket required', 400
-    VolumeNamespace().serve()
+
+    # Extract nest_id from path: /volume -> main, /volume/<id> -> id
+    path = request.path.rstrip('/')
+    parts = path.split('/')
+    # /volume -> ['', 'volume'], /volume/ABC -> ['', 'volume', 'ABC']
+    if len(parts) >= 3 and parts[2]:
+        nest_id = parts[2]
+        if nest_manager and nest_manager.get_nest(nest_id) is None:
+            return 'Nest not found', 404
+    else:
+        nest_id = "main"
+
+    VolumeNamespace(nest_id=nest_id).serve()
     return ''
 
 def __setup_bundles():
@@ -667,21 +684,23 @@ class VolumeNamespace(WebSocketManager):
         else:
             self.logger.info(msg)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, nest_id="main", **kwargs):
         super(VolumeNamespace, self).__init__(*args, **kwargs)
         self.logger = app.logger
-        self.log('new volume listener! {0}'.format(request.remote_addr), False)
+        self.nest_id = nest_id
+        self.db = DB(init_history_to_redis=False, nest_id=nest_id)
+        self.log('new volume listener for nest {0}! {1}'.format(nest_id, request.remote_addr), False)
         self.spawn(self.listener)
 
     def on_request_volume(self):
-        self.emit('volume', str(d.get_volume()))
+        self.emit('volume', str(self.db.get_volume()))
 
     def on_change_volume(self, vol):
-        self.emit('volume', str(d.set_volume(vol)))
+        self.emit('volume', str(self.db.set_volume(vol)))
 
     def listener(self):
         r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379, password=CONF.REDIS_PASSWORD or None, decode_responses=True).pubsub()
-        r.subscribe(pubsub_channel("main"))
+        r.subscribe(pubsub_channel(self.nest_id))
         for m in r.listen():
             if m['type'] != 'message':
                 continue
@@ -1578,27 +1597,25 @@ def api_nests_get(code):
 @app.route('/api/nests/<code>', methods=['PATCH'])
 @require_session_or_api_token
 def api_nests_update(code):
+    from flask import g
     if nest_manager is None:
         return jsonify(error='Nests not available'), 503
     nest = nest_manager.get_nest(code)
     if nest is None:
         return jsonify(error='not_found', message='Nest not found.'), 404
 
-    body = request.get_json(silent=True) or {}
+    # Only the creator can update a nest
+    if g.auth_email != nest.get('creator'):
+        return jsonify(error='forbidden', message='Only the nest creator can update it.'), 403
 
-    # Validate vanity code if provided
-    vanity_code = body.get('vanity_code')
-    if vanity_code is not None:
-        ok, err_msg = _validate_vanity_code(vanity_code)
-        if not ok:
-            return jsonify(error='invalid_vanity_code', message=err_msg), 400
+    body = request.get_json(silent=True) or {}
 
     # Update name if provided
     if 'name' in body:
         nest['name'] = body['name']
 
-    # Store updated metadata
-    nest_manager._r.hset('NESTS|registry', code, json.dumps(nest))
+    # Store updated metadata (use nest_id, not the URL code, to avoid duplicates)
+    nest_manager._r.hset('NESTS|registry', nest['nest_id'], json.dumps(nest))
     return jsonify(nest)
 
 

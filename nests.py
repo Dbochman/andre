@@ -81,6 +81,31 @@ def refresh_member_ttl(redis_client, nest_id, email, ttl_seconds=90):
     redis_client.setex(key, ttl_seconds, "1")
 
 
+def count_active_members(redis_client, nest_id):
+    """Count active members by checking heartbeat TTL keys, pruning stale ones.
+
+    Members in the MEMBERS set whose TTL key has expired are removed
+    from the set. Returns the count of still-active members.
+
+    Args:
+        redis_client: Redis connection
+        nest_id: The nest identifier
+
+    Returns:
+        int: Number of active members
+    """
+    mkey = members_key(nest_id)
+    emails = redis_client.smembers(mkey)
+    stale = []
+    for email in emails:
+        mk = member_key(nest_id, email)
+        if not redis_client.exists(mk):
+            stale.append(email)
+    for email in stale:
+        redis_client.srem(mkey, email)
+    return len(emails) - len(stale)
+
+
 def should_delete_nest(metadata, members, queue_size, now):
     """Determine whether a nest should be cleaned up.
 
@@ -256,6 +281,10 @@ class NestManager:
         Args:
             nest_id: The nest to delete
         """
+        if nest_id == "main":
+            logger.warning("Attempted to delete main nest — ignoring")
+            return
+
         # Get metadata to find the code
         raw = self._r.hget(_REGISTRY_KEY, nest_id)
         if raw:

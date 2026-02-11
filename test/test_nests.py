@@ -837,6 +837,91 @@ class TestNestManagerCRUD:
             assert all(c in nests.CODE_CHARS for c in code)
 
 
+class TestCountActiveMembers:
+    def test_prunes_stale_members(self):
+        nests = importlib.import_module("nests")
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = nests.NestManager(redis_client=fake_r)
+        nest = manager.create_nest("host@example.com")
+        nid = nest["code"]
+
+        # Add two members to the set
+        manager.join_nest(nid, "active@example.com")
+        manager.join_nest(nid, "stale@example.com")
+
+        # Set heartbeat TTL for active member only
+        nests.refresh_member_ttl(fake_r, nid, "active@example.com")
+        # stale@example.com has no TTL key (simulates expired heartbeat)
+
+        count = nests.count_active_members(fake_r, nid)
+        assert count == 1
+
+        # Stale member should have been pruned from the MEMBERS set
+        members = fake_r.smembers(nests.members_key(nid))
+        assert "active@example.com" in members
+        assert "stale@example.com" not in members
+
+    def test_all_active(self):
+        nests = importlib.import_module("nests")
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = nests.NestManager(redis_client=fake_r)
+        nest = manager.create_nest("host@example.com")
+        nid = nest["code"]
+
+        manager.join_nest(nid, "a@example.com")
+        manager.join_nest(nid, "b@example.com")
+        nests.refresh_member_ttl(fake_r, nid, "a@example.com")
+        nests.refresh_member_ttl(fake_r, nid, "b@example.com")
+
+        count = nests.count_active_members(fake_r, nid)
+        assert count == 2
+
+    def test_empty_nest(self):
+        nests = importlib.import_module("nests")
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = nests.NestManager(redis_client=fake_r)
+        nest = manager.create_nest("host@example.com")
+
+        count = nests.count_active_members(fake_r, nest["code"])
+        assert count == 0
+
+
+class TestDeleteNestMainGuard:
+    def test_delete_main_is_noop(self):
+        nests = importlib.import_module("nests")
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = nests.NestManager(redis_client=fake_r)
+
+        # Main nest should exist after init
+        assert manager.get_nest("main") is not None
+
+        # Attempting to delete main should be a no-op
+        manager.delete_nest("main")
+
+        # Main nest should still exist
+        assert manager.get_nest("main") is not None
+
+
 @pytest.mark.xfail(reason="Migration script not implemented yet")
 class TestMigrationScriptBehavior:
     def test_migration_script_idempotent(self):
