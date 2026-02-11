@@ -1604,7 +1604,7 @@ def api_nests_update(code):
     if nest is None:
         return jsonify(error='not_found', message='Nest not found.'), 404
 
-    # Only the creator can update a nest
+    # Only the creator can update a nest (field is 'creator' in all nest metadata)
     if g.auth_email != nest.get('creator'):
         return jsonify(error='forbidden', message='Only the nest creator can update it.'), 403
 

@@ -46,8 +46,12 @@ def master_player_tick_all(nest_manager=None, poll_interval=5):
 
             # Clean up dead greenlets so they can be re-spawned next cycle
             for nid in list(active_greenlets):
-                if active_greenlets[nid].dead:
-                    logger.warning("Player greenlet for nest %s died — will respawn", nid)
+                g = active_greenlets[nid]
+                if g.dead:
+                    if g.exception:
+                        logger.error("Player greenlet for nest %s died with: %s", nid, g.exception)
+                    else:
+                        logger.warning("Player greenlet for nest %s exited — will respawn", nid)
                     del active_greenlets[nid]
 
         except Exception:

@@ -99,7 +99,8 @@ def count_active_members(redis_client, nest_id):
     stale = []
     for email in emails:
         mk = member_key(nest_id, email)
-        if not redis_client.exists(mk):
+        # Use ttl() instead of exists(): a key with TTL <= 0 or missing is stale
+        if redis_client.ttl(mk) <= 0:
             stale.append(email)
     for email in stale:
         redis_client.srem(mkey, email)
