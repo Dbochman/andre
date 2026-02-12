@@ -856,7 +856,10 @@ def auth_callback():
         email_allowed = any(email.endswith('@' + domain) for domain in allowed_domains)
         if not email_allowed:
             logger.warning('Login rejected for email: %s (allowed domains: %s)', email, allowed_domains)
-            return redirect('/login/')
+            return make_response(
+                render_template('guest_login.html', failure=True,
+                                failure_message='Sorry, {} is not on the guest list. Ask the host to add your domain.'.format(email)),
+                403)
 
     for k1, k2 in (('email', 'email',), ('fullname', 'name'),):
         session[k1] = user[k2]

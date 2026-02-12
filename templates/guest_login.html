@@ -22,7 +22,7 @@
         </form>
         </div>
         {%if failure %}
-        <div class="alert alert-danger">Login Failure</div>
+        <div class="alert alert-danger">{{ failure_message or "Login Failure" }}</div>
         {%endif %}
     </body>
 </html>
