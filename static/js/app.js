@@ -706,6 +706,7 @@ socket.on('auth_token_update', function(data){
         auth_token_clear = 0;
         socket.emit('fetch_auth_token');
     }, data['time_left']*1000);
+    $('#connect-spotify').text('spotify connected').css('opacity', '0.6');
     // Resume Spotify playback now that we have a token
     resume_spotify_if_needed();
     // Sync local volumeBeforeMute with actual Spotify device volume (only if not muted)
@@ -2013,6 +2014,9 @@ window.addEventListener('load', function(){
     $('#make-player').on('click', make_player);
     $('#sync-audio-btn').on('click', make_player);
     $('#airhorn-sync-audio').on('click', make_player);
+    $('#connect-spotify').on('click', function() {
+        socket.emit('fetch_auth_token');
+    });
     $('#change-color').on('click', changeColors);
 
     // Load saved color theme
