@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>EchoNest - Sign In</title>
+        <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css" type="text/css">
+        <link rel="shortcut icon" href="/static/favicon.png">
+        <style>
+            body { background: #1a1a2e; color: #eee; }
+            .login-container {
+                max-width: 400px;
+                margin: 80px auto;
+                text-align: center;
+            }
+            .login-container h1 { margin-bottom: 10px; }
+            .login-container p.subtitle { color: #aaa; margin-bottom: 40px; }
+            .btn-google {
+                display: block;
+                width: 100%;
+                padding: 12px;
+                font-size: 16px;
+                background: #4285F4;
+                color: #fff;
+                border: none;
+                border-radius: 4px;
+                margin-bottom: 16px;
+                text-decoration: none;
+            }
+            .btn-google:hover { background: #357ae8; color: #fff; text-decoration: none; }
+            .divider {
+                display: flex;
+                align-items: center;
+                margin: 24px 0;
+                color: #666;
+            }
+            .divider::before, .divider::after {
+                content: '';
+                flex: 1;
+                border-bottom: 1px solid #333;
+            }
+            .divider span { padding: 0 12px; }
+            .guest-links a {
+                color: #aaa;
+                display: block;
+                margin: 8px 0;
+            }
+            .guest-links a:hover { color: #fff; }
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <h1>EchoNest</h1>
+            <p class="subtitle">Collaborative music queue</p>
+
+            <a href="/login/google" class="btn-google">Sign in with Google</a>
+
+            <div class="divider"><span>or</span></div>
+
+            <div class="guest-links">
+                <a href="/signup/">Create a guest account</a>
+                <a href="/guest/">Already have a guest account? Sign in</a>
+            </div>
+        </div>
+    </body>
+</html>

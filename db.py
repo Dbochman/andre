@@ -1806,15 +1806,36 @@ class DB(object):
         self._r.publish(self._key('MISC|update-pubsub'), msg)
 
     def try_login(self, email, passwd):
+        from werkzeug.security import check_password_hash
         email = email.lower()
         d = self._r.hget(self._key('MISC|guest-login-expire'), email)
         if not d or pickle_load_b64(d) < _now():
             self._r.hdel(self._key('MISC|guest-login'), email)
             return False
         full_pass = self._r.hget(self._key('MISC|guest-login'), email)
-        if full_pass and (full_pass == passwd):
+        if not full_pass:
+            return None
+        # Try werkzeug hash first, fall back to plain-text for legacy accounts
+        if full_pass.startswith(('pbkdf2:', 'scrypt:')):
+            if check_password_hash(full_pass, passwd):
+                return email
+        elif full_pass == passwd:
             return email
         return None
+
+    def guest_exists(self, email):
+        """Check if a guest account already exists for this email."""
+        email = email.lower()
+        return self._r.hexists(self._key('MISC|guest-login'), email)
+
+    def create_guest(self, email, password, days=365):
+        """Create a self-service guest account with a hashed password."""
+        from werkzeug.security import generate_password_hash
+        email = email.lower()
+        expires = _now() + datetime.timedelta(days=days)
+        hashed = generate_password_hash(password)
+        self._r.hset(self._key('MISC|guest-login-expire'), email, pickle_dump_b64(expires))
+        self._r.hset(self._key('MISC|guest-login'), email, hashed)
 
     def send_email(self, target, subject, body):
         if isinstance(target, str):

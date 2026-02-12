@@ -11,6 +11,7 @@ import secrets
 import urllib.parse
 import urllib.request
 import socket as psocket
+import re
 import gevent
 import redis
 import requests
@@ -732,8 +733,8 @@ class VolumeNamespace(WebSocketManager):
 def inject_config():
     return dict(CONF=CONF)
 
-SAFE_PATHS = ('/login/', '/logout/', '/playing/', '/queue/', '/volume/',
-              '/guest', '/guest/', '/api/jammit/', '/health',
+SAFE_PATHS = ('/login/', '/login/google', '/logout/', '/playing/', '/queue/', '/volume/',
+              '/guest', '/guest/', '/signup/', '/signup', '/api/jammit/', '/health',
               '/authentication/callback', '/token', '/last/', '/airhorns/', '/z/')
 SAFE_PARAM_PATHS = ('/history', '/user_history', '/user_jam_history', '/search/v2', '/youtube/lookup', '/youtube/playlist', '/add_song',
     '/blast_airhorn', '/airhorn_list', '/queue/', '/jam', '/api/')
@@ -821,6 +822,11 @@ def z():
 
 @app.route('/login/')
 def login():
+    return render_template('login.html')
+
+
+@app.route('/login/google')
+def login_google():
     args = dict(scope="email profile", redirect_uri=REDIRECT_URI,
                 response_type="code", client_id=CONF.GOOGLE_CLIENT_ID,
                 approval_prompt="auto", access_type="online")
@@ -991,6 +997,52 @@ def guest():
                         request.values.get('passwd', ''))
     if not email:
         return render_template('guest_login.html', failure=True)
+    session['email'] = email
+    session['fullname'] = 'Guest'
+    return redirect('/')
+
+
+@app.route('/signup/', methods=['GET', 'POST'])
+def signup():
+    if request.method == 'GET':
+        return render_template('signup.html')
+
+    email = (request.form.get('email') or '').strip().lower()
+    password = request.form.get('password') or ''
+    confirm = request.form.get('confirm') or ''
+
+    # Basic email format validation
+    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        return render_template('signup.html', error='Please enter a valid email address.')
+
+    if len(password) < 6:
+        return render_template('signup.html', error='Password must be at least 6 characters.', email=email)
+
+    if password != confirm:
+        return render_template('signup.html', error='Passwords do not match.', email=email)
+
+    # Rate limit: 5 signups per hour per IP
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+    rate_key = 'SIGNUP_RATE|{}'.format(client_ip)
+    r = redis.StrictRedis(host=CONF.REDIS_HOST or 'localhost', port=CONF.REDIS_PORT or 6379,
+                          password=CONF.REDIS_PASSWORD or None, decode_responses=True)
+    attempts = r.get(rate_key)
+    if attempts and int(attempts) >= 5:
+        return render_template('signup.html', error='Too many signups from this address. Please try again later.', email=email)
+
+    if d.guest_exists(email):
+        return render_template('signup.html', error='An account with this email already exists. Try signing in instead.', email=email)
+
+    d.create_guest(email, password)
+
+    # Increment rate limit counter
+    pipe = r.pipeline()
+    pipe.incr(rate_key)
+    pipe.expire(rate_key, 3600)  # 1 hour TTL
+    pipe.execute()
+
     session['email'] = email
     session['fullname'] = 'Guest'
     return redirect('/')
