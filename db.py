@@ -238,14 +238,15 @@ class DB(object):
         if is_nest_deleting(self._r, self.nest_id):
             raise RuntimeError("Nest is being deleted")
 
-    def _check_queue_depth(self):
-        """Raise RuntimeError if a non-main nest's queue is at max depth."""
+    def _check_queue_depth(self, client=None):
+        """Raise RuntimeError if a non-main nest's queue has reached max depth."""
         if self.nest_id == "main":
             return
         max_depth = getattr(CONF, 'NEST_MAX_QUEUE_DEPTH', 25)
         if max_depth <= 0:
             return
-        current = self._r.zcard(self._key('MISC|priority-queue'))
+        client = client or self._r
+        current = client.zcard(self._key('MISC|priority-queue'))
         if current >= max_depth:
             raise RuntimeError("Queue is full")
 
@@ -942,20 +943,41 @@ class DB(object):
 
     def _add_song(self, userid, song, force_first, penalty=0):
         self._check_nest_active()
-        self._check_queue_depth()
-        id = self._r.incr(self._key('MISC|playlist-plays'))
 
-        song.update(dict(background_color='222222',
+        queue_key = self._key('MISC|priority-queue')
+        id_key = self._key('MISC|playlist-plays')
+        id_value = None
+
+        while True:
+            with self._r.pipeline() as pipe:
+                try:
+                    pipe.watch(queue_key)
+                    self._check_queue_depth(pipe)
+
+                    id_value = self._r.incr(id_key)
+
+                    song.update(dict(
+                        background_color='222222',
                         foreground_color='F0F0FF',
-                        user=userid, id = id, vote=0))
-        self.set_song_in_queue(id, song)
-        s_id = self._key('QUEUE|VOTE|{0}'.format(id))
-        self._r.sadd(s_id, userid)
-        self._r.expire(s_id, 24*60*60)
-        score = self._score_track(userid, force_first, song) + penalty
-        self._r.zadd(self._key('MISC|priority-queue'), {str(id): score})
+                        user=userid,
+                        id=id_value,
+                        vote=0,
+                    ))
+                    score = self._score_track(userid, force_first, song) + penalty
+
+                    pipe.multi()
+                    self.set_song_in_queue(id_value, song, client=pipe)
+                    vote_key = self._key('QUEUE|VOTE|{0}'.format(id_value))
+                    pipe.sadd(vote_key, userid)
+                    pipe.expire(vote_key, 24*60*60)
+                    pipe.zadd(queue_key, {str(id_value): score})
+                    pipe.execute()
+                    break
+                except redis.WatchError:
+                    continue
+
         self._msg('playlist_update')
-        return str(id)
+        return str(id_value)
 
     def _pluck_youtube_img(self, doc, height):
         for img in doc['snippet']['thumbnails'].values():
@@ -1340,7 +1362,7 @@ class DB(object):
         data['comments'] = self.get_comments(id)
         return data or {}
 
-    def set_song_in_queue(self, id, data):
+    def set_song_in_queue(self, id, data, client=None):
         key = self._key('QUEUE|{0}'.format(id))
         # Redis requires string values - serialize complex types
         serialized_data = {}
@@ -1355,8 +1377,9 @@ class DB(object):
                 serialized_data[k] = ''
             else:
                 serialized_data[k] = str(v) if not isinstance(v, str) else v
-        self._r.hset(key, mapping=serialized_data)
-        self._r.expire(key, 24*60*60)
+        client = client or self._r
+        client.hset(key, mapping=serialized_data)
+        client.expire(key, 24*60*60)
 
     def nuke_queue(self, email):
         self._check_nest_active()

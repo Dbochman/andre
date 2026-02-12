@@ -469,7 +469,9 @@ class MusicNamespace(WebSocketManager):
                 self.emit('error', {'message': 'This nest is being deleted'})
                 return None
             if "Queue is full" in msg:
-                self.emit('error', {'message': 'Queue is full (max 25 songs)'})
+                max_depth = getattr(CONF, 'NEST_MAX_QUEUE_DEPTH', 25) or 0
+                limit_note = f' (max {max_depth} songs)' if max_depth > 0 else ''
+                self.emit('error', {'message': f'Queue is full{limit_note}'})
                 return None
             raise
 

@@ -1451,7 +1451,7 @@ function make_player(ev){
         ignore_refresh = false;
         socket.emit('fetch_auth_token');
     } else {
-        // Start playing the current track/episode immediately
+        // Start playing the current track immediately
         var src = now_playing.get('src');
         var trackid = now_playing.get('trackid');
         var pos = now_playing.get('pos') || 0;
@@ -1459,6 +1459,8 @@ function make_player(ev){
             fix_player(src, trackid, pos, playerpaused);
         }
     }
+    // Play a local airhorn so the user gets instant audio confirmation
+    _play_sync_confirmation();
     socket.emit('request_volume');
 
     $('#make-player').text('disconnect audio');
@@ -1626,6 +1628,15 @@ function playSound(buffer, volume) {
 
 function onError() {
     console.log('Airhorn file did not load!  Try a refresh.');
+}
+
+function _play_sync_confirmation() {
+    sort_airhorns();
+    var names = _.keys(airhorn_map);
+    if (names.length === 0) return;
+    var name = names[Math.floor(Math.random() * names.length)];
+    var localVol = localMuted ? 0 : volumeBeforeMute;
+    playSound(airhorn_map[name], localVol / 100);
 }
 
 function loadAirHorn(url) {

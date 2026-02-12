@@ -1049,6 +1049,72 @@ class TestCrossNestIsolation:
         assert "nest-B" in ch_b
 
 
+class TestQueueDepthLimit:
+    """Ensure temporary nests enforce configurable queue depth caps."""
+
+    @pytest.fixture
+    def temp_db(self):
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        from db import DB
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        db = DB(nest_id="temp-nest", init_history_to_redis=False, redis_client=fake_r)
+
+        # Silence pubsub messages during tests
+        db._msg = lambda *args, **kwargs: None
+        return db, fake_r
+
+    def _song_payload(self, idx):
+        return {
+            'src': 'spotify',
+            'trackid': f'spotify:track:{idx}',
+            'title': f'Song {idx}',
+            'artist': 'Tester',
+            'duration': 60,
+            'auto': False,
+            'big_img': '',
+            'img': '',
+        }
+
+    def test_temp_nest_rejects_when_full(self, temp_db, monkeypatch):
+        db, fake_r = temp_db
+
+        import config
+        monkeypatch.setattr(config.CONF, 'NEST_MAX_QUEUE_DEPTH', 2, raising=False)
+
+        db._add_song('user@example.com', self._song_payload(1), False)
+        db._add_song('user@example.com', self._song_payload(2), False)
+
+        with pytest.raises(RuntimeError, match='Queue is full'):
+            db._add_song('user@example.com', self._song_payload(3), False)
+
+        assert fake_r.zcard('NEST:temp-nest|MISC|priority-queue') == 2
+
+    def test_main_nest_ignores_queue_limit(self, monkeypatch):
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        from db import DB
+        import config
+
+        monkeypatch.setattr(config.CONF, 'NEST_MAX_QUEUE_DEPTH', 2, raising=False)
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        db = DB(nest_id="main", init_history_to_redis=False, redis_client=fake_r)
+        db._msg = lambda *args, **kwargs: None
+
+        # Should not raise even past the configured limit
+        for i in range(5):
+            db._add_song('user@example.com', self._song_payload(i), False)
+
+        assert fake_r.zcard('NEST:main|MISC|priority-queue') == 5
+
 class TestRaceResistantDeletion:
     """Verify the DELETING flag blocks writes and cleanup removes all keys."""
 
