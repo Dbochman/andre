@@ -19,10 +19,31 @@ class TestAuthGate:
         if os.environ.get('SKIP_SPOTIFY_PREFETCH'):
             pytest.skip('Skipping due to SKIP_SPOTIFY_PREFETCH')
 
-        from app import app
+        from app import app, CONF
+
         app.config['TESTING'] = True
-        with app.test_client() as client:
-            yield client
+
+        class _DummyDB:
+            def get_now_playing(self):
+                return {}
+
+            def get_queued(self):
+                return []
+
+        original_hostname = getattr(CONF, 'HOSTNAME', None)
+        original_dev_email = getattr(CONF, 'DEV_AUTH_EMAIL', None)
+        original_db = getattr(app, 'd', None)
+        try:
+            setattr(CONF, 'HOSTNAME', '')
+            setattr(CONF, 'DEV_AUTH_EMAIL', None)
+            setattr(app, 'd', _DummyDB())
+            with app.test_client() as client:
+                yield client
+        finally:
+            setattr(CONF, 'HOSTNAME', original_hostname)
+            setattr(CONF, 'DEV_AUTH_EMAIL', original_dev_email)
+            if original_db is not None:
+                setattr(app, 'd', original_db)
 
     def test_health_endpoint_public(self, client):
         """Health endpoint should be accessible without auth."""
@@ -54,6 +75,72 @@ class TestAuthGate:
         response = client.get('/static/favicon.png', follow_redirects=False)
         # 200 if exists, 404 if not, but not 302 redirect
         assert response.status_code != 302 or '/login/' not in response.location
+
+    def test_auth_callback_rejects_unapproved_domain(self, monkeypatch):
+        """OAuth callback returns 403 with a helpful message when domain is not allowed."""
+        if os.environ.get('SKIP_SPOTIFY_PREFETCH'):
+            pytest.skip('Skipping due to SKIP_SPOTIFY_PREFETCH')
+
+        from app import app, CONF
+
+        class DummyResponse:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def json(self):
+                return self._payload
+
+        monkeypatch.setattr('app.requests.post',
+                            lambda *args, **kwargs: DummyResponse({'access_token': 'fake-token'}))
+        monkeypatch.setattr('app.requests.get',
+                            lambda *args, **kwargs: DummyResponse({'email': 'user@blocked.com', 'name': 'Blocked User'}))
+        monkeypatch.setattr(CONF, 'ALLOWED_EMAIL_DOMAINS', ['allowed.com'], raising=False)
+
+        app.config['TESTING'] = True
+        base_url = f'http://{CONF.HOSTNAME}' if CONF.HOSTNAME else 'http://127.0.0.1:5000'
+        with app.test_client() as client:
+            response = client.get(
+                '/authentication/callback',
+                query_string={'code': 'dummy'},
+                base_url=base_url,
+            )
+
+        assert response.status_code == 403
+        assert b'not on the guest list' in response.data
+        assert b'Sign in with Google' in response.data
+
+    def test_auth_callback_allows_permitted_domain(self, monkeypatch):
+        """OAuth callback succeeds when the email domain is allowed."""
+        if os.environ.get('SKIP_SPOTIFY_PREFETCH'):
+            pytest.skip('Skipping due to SKIP_SPOTIFY_PREFETCH')
+
+        from app import app, CONF
+
+        class DummyResponse:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def json(self):
+                return self._payload
+
+        monkeypatch.setattr('app.requests.post',
+                            lambda *args, **kwargs: DummyResponse({'access_token': 'fake-token'}))
+        monkeypatch.setattr('app.requests.get',
+                            lambda *args, **kwargs: DummyResponse({'email': 'user@allowed.com', 'name': 'Allowed User'}))
+        monkeypatch.setattr(CONF, 'ALLOWED_EMAIL_DOMAINS', ['allowed.com'], raising=False)
+
+        app.config['TESTING'] = True
+        base_url = f'http://{CONF.HOSTNAME}' if CONF.HOSTNAME else 'http://127.0.0.1:5000'
+        with app.test_client() as client:
+            response = client.get(
+                '/authentication/callback',
+                query_string={'code': 'dummy'},
+                follow_redirects=False,
+                base_url=base_url,
+            )
+
+        assert response.status_code == 302
+        assert response.location.endswith('/')
 
 
 class TestAuthGateWithoutSpotify:

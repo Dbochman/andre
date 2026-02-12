@@ -16,6 +16,48 @@ class _Configuration(object):
 CONF = _Configuration()
 logger = logging.getLogger(__name__)
 
+
+def _normalize_allowed_email_domains(raw_value):
+    """Normalize ALLOWED_EMAIL_DOMAINS config values.
+
+    Supports YAML lists, comma/space-separated strings, or None. Returns a
+    list of distinct, lowercase domain strings without leading '@'.
+    """
+    if not raw_value:
+        return []
+
+    # Strings may contain comma/space separated entries
+    if isinstance(raw_value, str):
+        candidates = [part.strip() for part in raw_value.replace(';', ',').split(',')]
+    else:
+        # Accept any iterable (list/tuple/set) of strings
+        try:
+            candidates = [str(part).strip() for part in raw_value]
+        except TypeError:
+            # Unsupported type; fallback to empty list
+            return []
+
+    normalized = []
+    for domain in candidates:
+        if not domain:
+            continue
+        if domain == '*':
+            return ['*']
+        domain = domain.lower()
+        if domain.startswith('@'):
+            domain = domain[1:]
+        if domain:
+            normalized.append(domain)
+
+    # Preserve ordering while removing duplicates
+    seen = set()
+    unique_domains = []
+    for domain in normalized:
+        if domain not in seen:
+            seen.add(domain)
+            unique_domains.append(domain)
+    return unique_domains
+
 def get_config_filenames():
     if 'CONFIG_FILES' in os.environ:
         fnames = [x.strip() for x in os.environ['CONFIG_FILES'].split(':') if x.strip()]
@@ -48,6 +90,8 @@ def __read_conf(*files):
                 print(data)
                 for k, v in data.items():
                     print(k, v)
+                    if k == 'ALLOWED_EMAIL_DOMAINS':
+                        v = _normalize_allowed_email_domains(v)
                     setattr(CONF, k, v)
             logger.debug('Loaded file "{0}"'.format(f))
         except Exception as e:
@@ -58,21 +102,30 @@ def __read_conf(*files):
     for key in ENV_OVERRIDES:
         env_val = os.environ.get(key)
         if env_val is not None:
-            # Convert string booleans
-            if env_val.lower() in ('true', '1', 'yes'):
-                env_val = True
-            elif env_val.lower() in ('false', '0', 'no'):
-                env_val = False
-            # Convert numeric strings for port
-            elif key.endswith('_PORT'):
-                try:
-                    env_val = int(env_val)
-                except ValueError:
-                    pass
-            # Map ECHONEST_HOSTNAME to HOSTNAME
             config_key = 'HOSTNAME' if key == 'ECHONEST_HOSTNAME' else key
+            if key == 'ALLOWED_EMAIL_DOMAINS':
+                env_val = _normalize_allowed_email_domains(env_val)
+            else:
+                if isinstance(env_val, str):
+                    lowered = env_val.lower()
+                    # Convert string booleans
+                    if lowered in ('true', '1', 'yes'):
+                        env_val = True
+                    elif lowered in ('false', '0', 'no'):
+                        env_val = False
+                    # Convert numeric strings for port
+                    elif key.endswith('_PORT'):
+                        try:
+                            env_val = int(env_val)
+                        except ValueError:
+                            pass
             setattr(CONF, config_key, env_val)
             logger.debug('Override from env: {0}={1}'.format(config_key, env_val))
+
+    # Ensure allowed domains are normalized even if only defined in YAML
+    if hasattr(CONF, 'ALLOWED_EMAIL_DOMAINS'):
+        setattr(CONF, 'ALLOWED_EMAIL_DOMAINS',
+                _normalize_allowed_email_domains(getattr(CONF, 'ALLOWED_EMAIL_DOMAINS')))
 
     print("CONF", CONF)
 
