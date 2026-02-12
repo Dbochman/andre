@@ -1783,14 +1783,66 @@ function nestBuild() {
 
 function nestJoin(ev) {
     if (ev) ev.preventDefault();
-    var code = prompt('Enter the 5-character Nest code:');
-    if (code === null) return; // user cancelled
-    code = code.trim().toUpperCase();
-    if (!code || code.length !== 5) {
-        nestShowError('Enter a 5-character code');
-        return;
-    }
-    window.location.href = '/nest/' + code;
+    // Remove any existing join dialog
+    $('#nest-join-dialog').remove();
+
+    var html = '<div id="nest-join-dialog">' +
+        '<h3>Join a Nest</h3>' +
+        '<div id="nest-join-list"><p class="nest-join-loading">Loading nests...</p></div>' +
+        '<div class="nest-join-manual">' +
+        '<input type="text" id="nest-join-code" placeholder="Or enter a 5-character code" maxlength="5" />' +
+        '<a href="javascript:void(0)" class="nest-join-go">Go</a>' +
+        '</div>' +
+        '<a href="javascript:void(0)" class="alert-close">Close</a>' +
+        '</div>';
+    $('#page-container').append(html);
+
+    // Close button
+    $('#nest-join-dialog .alert-close').on('click', function() {
+        $('#nest-join-dialog').remove();
+    });
+
+    // Manual code entry
+    $('#nest-join-dialog .nest-join-go').on('click', function() {
+        var code = $('#nest-join-code').val().trim().toUpperCase();
+        if (!code || code.length !== 5) {
+            nestShowError('Enter a 5-character code');
+            return;
+        }
+        window.location.href = '/nest/' + code;
+    });
+    $('#nest-join-code').on('keypress', function(e) {
+        if (e.which === 13) $('#nest-join-dialog .nest-join-go').click();
+    });
+
+    // Fetch active nests
+    fetch('/api/nests', { credentials: 'same-origin' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var nests = (data.nests || []).filter(function(n) {
+                return n.nest_id !== _nestId;
+            });
+            var $list = $('#nest-join-list');
+            $list.empty();
+            if (nests.length === 0) {
+                $list.append('<p class="nest-join-empty">No active nests right now</p>');
+                return;
+            }
+            nests.forEach(function(n) {
+                var np = n.now_playing;
+                var detail = np ? np.title + ' \u2013 ' + np.artist : 'Nothing playing';
+                var members = n.member_count || 0;
+                var item = '<a href="/nest/' + n.code + '" class="nest-join-item">' +
+                    '<span class="nest-join-name">' + _.escape(n.name) + '</span>' +
+                    '<span class="nest-join-np">' + _.escape(detail) + '</span>' +
+                    '<span class="nest-join-members">' + members + ' listening</span>' +
+                    '</a>';
+                $list.append(item);
+            });
+        })
+        .catch(function() {
+            $('#nest-join-list').html('<p class="nest-join-empty">Could not load nests</p>');
+        });
 }
 
 function nestShare() {

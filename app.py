@@ -1592,6 +1592,24 @@ def api_nests_list():
     nests_list = nest_manager.list_nests()
     result = []
     for nest_id, meta in nests_list:
+        # Include now-playing summary and member count
+        try:
+            nest_db = DB(init_history_to_redis=False, nest_id=nest_id)
+            np = nest_db.get_now_playing()
+            if np and np.get('title'):
+                meta['now_playing'] = {
+                    'title': np.get('title', ''),
+                    'artist': np.get('secondary_text') or np.get('artist', ''),
+                }
+            else:
+                meta['now_playing'] = None
+        except Exception:
+            meta['now_playing'] = None
+        try:
+            mkey = members_key(nest_id)
+            meta['member_count'] = nest_manager._r.scard(mkey)
+        except Exception:
+            meta['member_count'] = 0
         result.append(meta)
     return jsonify(nests=result)
 
