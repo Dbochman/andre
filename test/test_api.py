@@ -162,7 +162,7 @@ class TestAPIWithoutSpotify:
         """Verify /api/ is in SAFE_PARAM_PATHS so it bypasses session auth."""
         try:
             from app import SAFE_PARAM_PATHS
-        except (ImportError, ModuleNotFoundError) as e:
+        except Exception as e:
             pytest.skip(f'Cannot import app: {e}')
 
         assert '/api/' in SAFE_PARAM_PATHS

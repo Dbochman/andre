@@ -94,18 +94,24 @@
                     <a href="javascript:void(0);" id="nest-join-btn" class="left-button">Join a Nest</a>
                     {% else %}
                     <a href="javascript:void(0);" id="nest-share" class="left-button">Share Nest</a>
-                    <a href="/" class="left-button">Back to Home Nest</a>
+                    <a href="/" class="left-button">Back to The EchoNest</a>
                     {% endif %}
                     <span id="nest-bar-error" class="nest-bar-error"></span>
-                    <div class="nest-info-section nest-listener-section">
-                        {% if is_main_nest %}
-                        <span class="nest-name">EchoNest</span>
-                        <span class="nest-listener-count"><span id="nest-listener-num">--</span> listening across <span id="nest-active-count">--</span> nests</span>
-                        {% else %}
-                        <span class="nest-name">{{ nest_name }}</span>
-                        <span class="nest-listener-count"><span id="nest-listener-num">--</span> listening</span>
-                        {% endif %}
+                    {% if is_main_nest %}
+                    <div class="nest-info-section nest-name-section">
+                        <span class="nest-name">This is the <strong>EchoNest</strong></span>
                     </div>
+                    <div class="nest-listener-bar">
+                        <span class="nest-listener-count"><span id="nest-listener-num">--</span> listening across <span id="nest-active-count">--</span> nests</span>
+                    </div>
+                    {% else %}
+                    <div class="nest-info-section nest-name-section">
+                        <span class="nest-name">This is the <strong>{{ nest_name }}</strong></span>
+                    </div>
+                    <div class="nest-listener-bar">
+                        <span class="nest-listener-count"><span id="nest-listener-num">--</span> listening</span>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>

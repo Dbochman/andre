@@ -793,6 +793,46 @@ class TestNestManagerCRUD:
         manager.delete_nest(nest["code"])
         assert manager.get_nest(nest["code"]) is None
 
+    def test_random_name_from_nest_names(self):
+        nests = importlib.import_module("nests")
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = nests.NestManager(redis_client=fake_r)
+
+        nest = manager.create_nest("creator@example.com")
+        assert nest["name"] in nests.NEST_NAMES
+
+    def test_two_nests_get_different_random_names(self):
+        nests = importlib.import_module("nests")
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = nests.NestManager(redis_client=fake_r)
+
+        nest1 = manager.create_nest("a@example.com")
+        nest2 = manager.create_nest("b@example.com")
+        assert nest1["name"] != nest2["name"]
+
+    def test_explicit_name_overrides_random(self):
+        nests = importlib.import_module("nests")
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = nests.NestManager(redis_client=fake_r)
+
+        nest = manager.create_nest("creator@example.com", name="Friday Jams")
+        assert nest["name"] == "Friday Jams"
+
     def test_join_and_leave(self):
         nests = importlib.import_module("nests")
         try:
@@ -1187,3 +1227,169 @@ class TestRaceResistantDeletion:
 
         with pytest.raises(RuntimeError, match="being deleted"):
             db.nuke_queue("user@example.com")
+
+
+class TestNestSeedMap:
+    """Tests for nest-name-based Bender seed mapping."""
+
+    def test_nest_seed_map_covers_all_names(self):
+        from nests import NEST_NAMES, NEST_SEED_MAP
+        assert set(NEST_NAMES) == set(NEST_SEED_MAP.keys())
+
+    def test_seed_uris_are_valid_format(self):
+        from nests import NEST_SEED_MAP
+        for name, (uri, genre) in NEST_SEED_MAP.items():
+            assert uri.startswith('spotify:track:'), f"{name} has invalid URI: {uri}"
+
+    def test_get_nest_seed_info_known_name(self):
+        from nests import get_nest_seed_info, NEST_SEED_MAP
+        # Pick a known name and verify the lookup returns the right tuple
+        uri, genre = get_nest_seed_info('FunkNest')
+        expected_uri, expected_genre = NEST_SEED_MAP['FunkNest']
+        assert uri == expected_uri
+        assert genre == expected_genre
+
+    def test_get_nest_seed_info_strips_suffix(self):
+        from nests import get_nest_seed_info, NEST_SEED_MAP
+        # "BassNest2" should resolve to BassNest's entry
+        uri, genre = get_nest_seed_info('BassNest2')
+        expected_uri, expected_genre = NEST_SEED_MAP['BassNest']
+        assert uri == expected_uri
+        assert genre == expected_genre
+
+    def test_get_nest_seed_info_unknown_returns_default(self):
+        from nests import get_nest_seed_info, _DEFAULT_SEED
+        # Custom names like "Friday Vibes" should get the default
+        assert get_nest_seed_info('Friday Vibes') == _DEFAULT_SEED
+        assert get_nest_seed_info('Home Nest') == _DEFAULT_SEED
+        assert get_nest_seed_info('') == _DEFAULT_SEED
+
+    def test_create_nest_with_seed_track_stores_metadata(self):
+        """Creating a nest with seed_track stores seed_uri and genre_hint."""
+        from unittest.mock import patch, MagicMock
+        from nests import NestManager
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = NestManager(redis_client=fake_r)
+
+        mock_spotify = MagicMock()
+        mock_spotify.track.return_value = {
+            'artists': [{'id': 'artist123', 'name': 'Test Artist'}],
+        }
+        mock_spotify.artist.return_value = {
+            'genres': ['indie rock', 'alternative'],
+        }
+
+        with patch('nests.spotify_client', mock_spotify, create=True):
+            # Patch at the import target in the module
+            import db as db_mod
+            with patch.object(db_mod, 'spotify_client', mock_spotify):
+                nest = manager.create_nest(
+                    "creator@example.com",
+                    name="Friday Vibes",
+                    seed_track="spotify:track:abc123",
+                )
+
+        assert nest['seed_uri'] == 'spotify:track:abc123'
+        assert nest['genre_hint'] == 'indie rock'
+
+        # Verify it's persisted in Redis
+        fetched = manager.get_nest(nest['code'])
+        assert fetched['seed_uri'] == 'spotify:track:abc123'
+        assert fetched['genre_hint'] == 'indie rock'
+
+    def test_create_nest_with_invalid_seed_track_raises(self):
+        """Non-spotify:track: URI raises ValueError."""
+        from nests import NestManager
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = NestManager(redis_client=fake_r)
+
+        with pytest.raises(ValueError, match="spotify:track:"):
+            manager.create_nest("c@example.com", seed_track="spotify:album:xyz")
+
+        with pytest.raises(ValueError, match="spotify:track:"):
+            manager.create_nest("c@example.com", seed_track="https://open.spotify.com/track/abc")
+
+    def test_create_nest_without_seed_track_unchanged(self):
+        """No seed_track → no seed_uri/genre_hint in metadata."""
+        from nests import NestManager
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = NestManager(redis_client=fake_r)
+
+        nest = manager.create_nest("c@example.com", name="Plain Nest")
+        assert 'seed_uri' not in nest
+        assert 'genre_hint' not in nest
+
+    def test_fallback_prefers_explicit_seed_uri(self):
+        """Nest with explicit seed_uri → _nest_fallback_seed() returns it."""
+        from unittest.mock import patch, MagicMock
+        from nests import NestManager
+        from db import DB
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = NestManager(redis_client=fake_r)
+
+        mock_spotify = MagicMock()
+        mock_spotify.track.return_value = {
+            'artists': [{'id': 'a1', 'name': 'Artist'}],
+        }
+        mock_spotify.artist.return_value = {'genres': ['funk']}
+
+        import db as db_mod
+        with patch.object(db_mod, 'spotify_client', mock_spotify):
+            nest = manager.create_nest(
+                "c@example.com", name="Custom",
+                seed_track="spotify:track:explicit123",
+            )
+
+        db = DB(nest_id=nest['code'], init_history_to_redis=False, redis_client=fake_r)
+        result = db._nest_fallback_seed()
+        assert result == 'spotify:track:explicit123'
+
+    def test_genre_hint_prefers_explicit(self):
+        """Nest with explicit genre_hint → _get_nest_genre_hint() returns it."""
+        from unittest.mock import patch, MagicMock
+        from nests import NestManager
+        from db import DB
+        try:
+            import fakeredis
+        except ImportError:
+            pytest.skip("fakeredis not installed")
+
+        fake_r = fakeredis.FakeRedis(decode_responses=True)
+        manager = NestManager(redis_client=fake_r)
+
+        mock_spotify = MagicMock()
+        mock_spotify.track.return_value = {
+            'artists': [{'id': 'a1', 'name': 'Artist'}],
+        }
+        mock_spotify.artist.return_value = {'genres': ['synthwave']}
+
+        import db as db_mod
+        with patch.object(db_mod, 'spotify_client', mock_spotify):
+            nest = manager.create_nest(
+                "c@example.com", name="Custom",
+                seed_track="spotify:track:synth456",
+            )
+
+        db = DB(nest_id=nest['code'], init_history_to_redis=False, redis_client=fake_r)
+        result = db._get_nest_genre_hint()
+        assert result == 'synthwave'

@@ -18,6 +18,96 @@ logger = logging.getLogger(__name__)
 # Character set for nest codes: unambiguous uppercase + digits (no 0/O/1/I/L)
 CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
+# Friendly auto-generated nest names (sonic/audio themed)
+NEST_NAMES = (
+    'WaveyNest', 'BassNest', 'VibesNest', 'FunkNest', 'GrooveNest',
+    'TrebleNest', 'ReverbNest', 'TempoNest', 'RiffNest', 'SynthNest',
+    'LoopNest', 'BeatNest', 'ChordNest', 'FaderNest', 'SubNest',
+    'DropNest', 'PulseNest', 'ToneNest', 'MixNest', 'TrackNest',
+    'SampleNest', 'BreakNest', 'HookNest', 'BridgeNest', 'VerseNest',
+    'ChorusNest', 'MelodyNest', 'RhythmNest', 'HarmonyNest', 'CadenceNest',
+    'OctaveNest', 'PitchNest', 'GainNest', 'ClipNest', 'FlangerNest',
+    'PhaserNest', 'DistortNest', 'WahNest', 'CrunchNest', 'FuzzNest',
+    'BoostNest', 'SlapNest', 'SnapNest', 'PopNest', 'ClickNest',
+    'BoomNest', 'HissNest', 'BuzzNest', 'TwangNest', 'StompNest',
+)
+
+# Default seed for main nest and custom-named nests (Billy Joel - Piano Man)
+_DEFAULT_SEED = ('spotify:track:3utq2FgD1pkmIoaWfjXWAU', None)
+
+# Maps each nest name to (spotify_track_uri, genre_keyword) for themed Bender seeding.
+# Genre keywords are from Spotify's recognized genre taxonomy.
+NEST_SEED_MAP = {
+    'WaveyNest':    ('spotify:track:5GUYJTQap5F3RDQiCOJhrS', 'new wave'),        # Duran Duran - Hungry Like the Wolf
+    'BassNest':     ('spotify:track:3MODES4TNtygekLl146Dxd', 'bass music'),       # Bassnectar - Bass Head
+    'VibesNest':    ('spotify:track:5le4sn0iMcnKU56bdmNzso', 'chill'),            # Roy Ayers Ubiquity - Everybody Loves The Sunshine
+    'FunkNest':     ('spotify:track:4XRkQloZFcRrCONN7ZQ49Y', 'funk'),             # Parliament - Give Up The Funk
+    'GrooveNest':   ('spotify:track:1TfqLAPs4K3s2rJMoCokcS', 'groove'),           # Earth Wind & Fire - September
+    'TrebleNest':   ('spotify:track:1vrd6UOGamcKNGnSHJQlSt', 'classical'),        # Vivaldi - Four Seasons Spring
+    'ReverbNest':   ('spotify:track:2pQ4A6w5HSurB5WiaLFhcF', 'shoegaze'),         # My Bloody Valentine - Only Shallow
+    'TempoNest':    ('spotify:track:3yfqSUWxFvZELEM4PmlwIR', 'drum and bass'),    # Pendulum - Slam
+    'RiffNest':     ('spotify:track:57bgtoPSgt236HzfBOd8kj', 'hard rock'),        # AC/DC - Thunderstruck
+    'SynthNest':    ('spotify:track:3MrRksHupTVEQ7YbA0FsZK', 'synthpop'),         # Depeche Mode - Enjoy the Silence
+    'LoopNest':     ('spotify:track:6nek1Nin9q48AVZcWs9e9D', 'trip hop'),         # Massive Attack - Teardrop
+    'BeatNest':     ('spotify:track:7GhIk7Il098yCjg4BQjzvb', 'hip hop'),          # J Dilla - Workinonit
+    'ChordNest':    ('spotify:track:4gphxUgq0JSFv2BCLhNDiE', 'jazz'),             # Bill Evans - Waltz for Debby
+    'FaderNest':    ('spotify:track:2PpruBYCo4H7WOBJ7Q2EwM', 'deep house'),       # Larry Heard - Can You Feel It
+    'SubNest':      ('spotify:track:4rwpZEcnalkuhPyGkEdhu0', 'dubstep'),          # Skrillex - Scary Monsters and Nice Sprites
+    'DropNest':     ('spotify:track:5HQVUIKwCEXpe7JIHyY734', 'edm'),              # Skrillex - Bangarang
+    'PulseNest':    ('spotify:track:7xQYVjs4wZNdCwO0EeAWMC', 'techno'),           # Underworld - Born Slippy (Nuxx)
+    'ToneNest':     ('spotify:track:4u7EnebtmKWzUH433cf5Qv', 'soul'),             # Marvin Gaye - What's Going On
+    'MixNest':      ('spotify:track:4uLU6hMCjMI75M1A2tKUQC', 'dance'),            # Daft Punk - One More Time
+    'TrackNest':    ('spotify:track:0pqnGHJpmpxLKifKRmU6WP', 'electronic'),       # Aphex Twin - Windowlicker
+    'SampleNest':   ('spotify:track:5Z01UMMf7V1o0MzF86s6WJ', 'boom bap'),         # DJ Shadow - Building Steam
+    'BreakNest':    ('spotify:track:40riOy7x9W7GXjyGp4pjAv', 'breakbeat'),        # The Prodigy - Firestarter
+    'HookNest':     ('spotify:track:7lPN2DXiMsVn7XUKtOW1CS', 'pop'),              # Michael Jackson - Billie Jean
+    'BridgeNest':   ('spotify:track:6dGnYIeXmHdcikdzNNDMm2', 'progressive rock'), # Pink Floyd - Another Brick
+    'VerseNest':    ('spotify:track:3n3Ppam7vgaVa1iaRUc9Lp', 'singer-songwriter'),# Elliott Smith - Between the Bars
+    'ChorusNest':   ('spotify:track:3qiyyUfYe7CRYLucrPmulD', 'anthem'),           # Queen - Bohemian Rhapsody
+    'MelodyNest':   ('spotify:track:3BQHpFgAp4l80e1XslIjNI', 'indie pop'),        # The Smiths - There Is a Light
+    'RhythmNest':   ('spotify:track:2r0KlAVemiB1TyTqgCh5ve', 'afrobeat'),         # Fela Kuti - Zombie
+    'HarmonyNest':  ('spotify:track:5jgFfDIR6FR0gvlA56Nakr', 'a cappella'),       # Pentatonix - Daft Punk Medley
+    'CadenceNest':  ('spotify:track:2tUBqZG2AbRi7Q0BIrVrEj', 'neo soul'),         # Erykah Badu - On & On
+    'OctaveNest':   ('spotify:track:1B75hgRqe7A4fwee3g3Wmu', 'opera'),            # Pavarotti - Nessun Dorma
+    'PitchNest':    ('spotify:track:17QTsL4K9B9v4rI8CAIdfC', 'barbershop'),       # The Beach Boys - God Only Knows
+    'GainNest':     ('spotify:track:7iN1s7xHE4ifF5povM6A48', 'metal'),            # Metallica - Enter Sandman
+    'ClipNest':     ('spotify:track:7dt6x5M1jzdTEt8oCbisTK', 'lo-fi'),            # Mac DeMarco - Chamber of Reflection
+    'FlangerNest':  ('spotify:track:37Tmv4NnfQeb0ZgUC4fOJj', 'psychedelic rock'), # Tame Impala - The Less I Know
+    'PhaserNest':   ('spotify:track:6habFhsOp2NvshLv26DqMb', 'space rock'),       # Muse - Knights of Cydonia
+    'DistortNest':  ('spotify:track:5ghIJDpPoe3CfHMGu71E6T', 'grunge'),           # Nirvana - Smells Like Teen Spirit
+    'WahNest':      ('spotify:track:0wJoRiX5K5BxlqZTolB2LD', 'blues rock'),       # Jimi Hendrix - Voodoo Child
+    'CrunchNest':   ('spotify:track:124Y9LPRCAz3q2OP0iCvcJ', 'punk rock'),        # The Clash - London Calling
+    'FuzzNest':     ('spotify:track:5CQ30WqJwcep0pYcV4AMNc', 'stoner rock'),      # Black Sabbath - Paranoid
+    'BoostNest':    ('spotify:track:0VjIjW4GlUZAMYd2vXMi3b', 'power pop'),        # Weezer - Buddy Holly
+    'SlapNest':     ('spotify:track:3ZOEytgrvLwQaqXreDs2Jx', 'slap house'),       # Red Hot Chili Peppers - Can't Stop
+    'SnapNest':     ('spotify:track:0VgkVdmE4gld66l8iyGjgx', 'trap'),             # Future - Mask Off
+    'PopNest':      ('spotify:track:2Fxmhks0bxGSBdJ92vM42m', 'pop'),              # Britney Spears - Toxic
+    'ClickNest':    ('spotify:track:553HOkDZQktOEBKvxTBPS1', 'minimal techno'),   # Plastikman (Richie Hawtin) - Spastik
+    'BoomNest':     ('spotify:track:5YoITs1m0q8UOQ4AW7N5ga', 'reggaeton'),         # Daddy Yankee - Gasolina
+    'HissNest':     ('spotify:track:4LRPiXqCikLlN15c3yImP7', 'ambient'),          # Brian Eno - Music for Airports
+    'BuzzNest':     ('spotify:track:2EoOZnxNgtmZaD8uUmz2nD', 'industrial'),       # Nine Inch Nails - Head Like a Hole
+    'TwangNest':    ('spotify:track:5rDkA2TFOImbiVenmnE9r4', 'country'),          # Johnny Cash - Ring of Fire
+    'StompNest':    ('spotify:track:3dPQuX8Gs42Y7b454ybpMR', 'garage rock'),      # The White Stripes - Seven Nation Army
+}
+
+
+def get_nest_seed_info(nest_name):
+    """Look up themed seed track and genre keyword for a nest name.
+
+    Strips numeric suffixes for overflow names (e.g. "BassNest2" → "BassNest").
+    Returns (spotify_track_uri, genre_keyword) tuple, or _DEFAULT_SEED for unknown names.
+    """
+    if nest_name in NEST_SEED_MAP:
+        return NEST_SEED_MAP[nest_name]
+
+    # Strip trailing digits for overflow names like "BassNest2"
+    import re
+    base_name = re.sub(r'\d+$', '', nest_name)
+    if base_name in NEST_SEED_MAP:
+        return NEST_SEED_MAP[base_name]
+
+    return _DEFAULT_SEED
+
 
 # ---------------------------------------------------------------------------
 # Pure helper functions
@@ -170,6 +260,23 @@ def _code_key(code):
     return f'NESTS|code:{code}'
 
 
+def _slug_key(slug):
+    """Return the Redis key for a nest slug lookup (global, NOT nest-scoped)."""
+    return f'NESTS|slug:{slug}'
+
+
+def slugify(name):
+    """Convert a nest name to a URL-safe slug.
+
+    Lowercases, replaces spaces/special chars with hyphens, strips leading/trailing hyphens.
+    """
+    import re
+    slug = name.lower().strip()
+    slug = re.sub(r'[^a-z0-9]+', '-', slug)
+    slug = slug.strip('-')
+    return slug
+
+
 class NestManager:
     """Manages nest lifecycle: create, read, update, delete.
 
@@ -219,16 +326,72 @@ class NestManager:
                 return code
         raise RuntimeError("Could not generate unique nest code after 100 attempts")
 
-    def create_nest(self, creator_email, name=None):
+    def _pick_random_name(self):
+        """Pick a random unused nest name from NEST_NAMES.
+
+        If all names are taken, appends a numeric suffix to a random pick.
+        """
+        all_data = self._r.hgetall(_REGISTRY_KEY)
+        used_names = set()
+        for raw_meta in all_data.values():
+            try:
+                meta = json.loads(raw_meta)
+                used_names.add(meta.get('name'))
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        available = [n for n in NEST_NAMES if n not in used_names]
+        if available:
+            return random.choice(available)
+
+        # All names taken — pick a random base and append a number
+        base = random.choice(NEST_NAMES)
+        suffix = 2
+        while f'{base}{suffix}' in used_names:
+            suffix += 1
+        return f'{base}{suffix}'
+
+    def _resolve_track_seed(self, seed_track):
+        """Resolve a Spotify track URI to (seed_uri, genre_hint).
+
+        Fetches track and artist metadata from Spotify to extract the
+        primary genre. Returns (seed_track, genre) or (seed_track, None)
+        if no genres found or on API error.
+        """
+        from db import spotify_client
+        try:
+            track_id = seed_track.split(':')[-1]
+            track_data = spotify_client.track(track_id)
+            artists = track_data.get('artists', [])
+            if not artists:
+                return (seed_track, None)
+            artist_id = artists[0]['id']
+            artist_data = spotify_client.artist(artist_id)
+            genres = artist_data.get('genres', [])
+            return (seed_track, genres[0]) if genres else (seed_track, None)
+        except Exception:
+            logger.warning("Failed to resolve seed track %s, storing URI only", seed_track)
+            return (seed_track, None)
+
+    def create_nest(self, creator_email, name=None, seed_track=None):
         """Create a new nest.
 
         Args:
             creator_email: Email of the creator
             name: Optional name for the nest
+            seed_track: Optional Spotify track URI (spotify:track:xxx) to
+                seed Bender recommendations for this nest
 
         Returns:
             dict with nest metadata including 'code'
+
+        Raises:
+            ValueError: If seed_track is provided but not a valid spotify:track: URI
         """
+        if seed_track is not None:
+            if not seed_track.startswith('spotify:track:'):
+                raise ValueError("seed_track must be a spotify:track: URI")
+
         code = self.generate_code()
         nest_id = code  # Use code as nest_id for simplicity
 
@@ -236,7 +399,7 @@ class NestManager:
         metadata = {
             'nest_id': nest_id,
             'code': code,
-            'name': name or f'Nest {code}',
+            'name': name or self._pick_random_name(),
             'creator': creator_email,
             'is_main': False,
             'created_at': now,
@@ -244,15 +407,29 @@ class NestManager:
             'ttl_minutes': getattr(CONF, 'NEST_MAX_INACTIVE_MINUTES', 5),
         }
 
+        if seed_track is not None:
+            seed_uri, genre_hint = self._resolve_track_seed(seed_track)
+            metadata['seed_uri'] = seed_uri
+            if genre_hint is not None:
+                metadata['genre_hint'] = genre_hint
+
+        # Generate slug from name (for custom names, gives a URL path)
+        slug = slugify(metadata['name'])
+        if slug:
+            metadata['slug'] = slug
+
         # Store in registry hash (nest_id -> JSON metadata)
         self._r.hset(_REGISTRY_KEY, nest_id, json.dumps(metadata))
         # Store code lookup (code -> nest_id)
         self._r.set(_code_key(code), nest_id)
+        # Store slug lookup (slug -> nest_id) if we have one
+        if slug:
+            self._r.set(_slug_key(slug), nest_id)
 
         return metadata
 
     def get_nest(self, nest_id):
-        """Get nest metadata by nest_id (which is also the code).
+        """Get nest metadata by nest_id, code, or slug.
 
         Returns dict or None if not found.
         """
@@ -262,6 +439,13 @@ class NestManager:
 
         # Try looking up by code
         looked_up_id = self._r.get(_code_key(nest_id))
+        if looked_up_id:
+            raw = self._r.hget(_REGISTRY_KEY, looked_up_id)
+            if raw:
+                return json.loads(raw)
+
+        # Try looking up by slug
+        looked_up_id = self._r.get(_slug_key(nest_id))
         if looked_up_id:
             raw = self._r.hget(_REGISTRY_KEY, looked_up_id)
             if raw:
@@ -304,13 +488,16 @@ class NestManager:
         # Set DELETING flag with 30s TTL (auto-expires on crash)
         self._r.setex(deleting_key(nest_id), 30, "1")
 
-        # Get metadata to find the code
+        # Get metadata to find the code and slug
         raw = self._r.hget(_REGISTRY_KEY, nest_id)
         if raw:
             try:
                 meta = json.loads(raw)
                 code = meta.get('code', nest_id)
                 self._r.delete(_code_key(code))
+                slug = meta.get('slug')
+                if slug:
+                    self._r.delete(_slug_key(slug))
             except (json.JSONDecodeError, TypeError):
                 pass
 

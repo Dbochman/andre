@@ -270,6 +270,106 @@ float:left; width:30px; height:30px;
             padding:5px 20px; width:30px; color: #b9b9b9;}
 #confirm a:hover {text-decoration:none; background: rgba(0,0,0,0.1);}
 
+#nest-join-backdrop {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6); z-index: 99998;
+}
+#nest-join-dialog {
+    width: 80%; position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgb(31, 31, 31);
+    color: #F0F0F0; z-index: 99999; text-align: center;
+    padding: 15px; box-shadow: 4px 4px 8px rgba(0,0,0,0.5);
+    max-height: 80vh; display: flex; flex-direction: column;
+    border-radius: 4px;
+}
+#nest-join-dialog h3 { margin: 0 0 8px; flex-shrink: 0; }
+#nest-join-list {
+    overflow-y: auto; flex: 1; min-height: 0;
+}
+#nest-join-dialog .alert-close {
+    display: inline-block; background: rgba(255,255,255,0.2);
+    padding: 5px 20px; color: #b9b9b9; margin-top: 10px; flex-shrink: 0;
+}
+#nest-join-dialog .alert-close:hover { text-decoration: none; background: rgba(0,0,0,0.1); }
+.nest-join-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
+    color: #F0F0F0; text-decoration: none; cursor: pointer;
+}
+.nest-join-item:hover { background: rgba(255,255,255,0.06); text-decoration: none; }
+.nest-join-name { font-weight: 700; flex-shrink: 0; margin-right: 12px; }
+.nest-join-np { flex: 1; text-align: left; color: #999; font-size: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nest-join-members { flex-shrink: 0; font-size: 12px; color: #777; margin-left: 12px; }
+.nest-join-loading, .nest-join-empty { color: #999; padding: 8px 0; font-size: 14px; }
+.nest-join-manual {
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px; margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    flex-shrink: 0;
+}
+#nest-join-code {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #F0F0F0; padding: 8px 12px; font-size: 14px; text-align: center;
+    text-transform: uppercase; letter-spacing: 2px;
+    width: 130px !important; max-width: 130px; box-sizing: border-box;
+    border-radius: 3px; outline: none;
+}
+#nest-join-code:focus { border-color: rgba(255,255,255,0.4); }
+#nest-join-code::placeholder { letter-spacing: 0.5px; font-size: 12px; text-transform: none; color: #666; }
+.nest-join-go {
+    display: inline-block; background: rgba(255,255,255,0.15);
+    padding: 8px 18px; color: #ccc; cursor: pointer; border-radius: 3px;
+    font-size: 14px;
+}
+.nest-join-go:hover { text-decoration: none; background: rgba(255,255,255,0.25); color: #fff; }
+
+/* Create nest dialog */
+#nest-create-backdrop {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6); z-index: 99998;
+}
+#nest-create-dialog {
+    width: 80%; position: fixed; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgb(31, 31, 31);
+    color: #F0F0F0; z-index: 99999; text-align: left;
+    padding: 20px; box-shadow: 4px 4px 8px rgba(0,0,0,0.5);
+    max-height: 80vh; overflow-y: auto; border-radius: 4px;
+}
+#nest-create-dialog h3 { margin: 0 0 14px; text-align: center; }
+#nest-create-dialog .alert-close {
+    display: inline-block; background: rgba(255,255,255,0.1);
+    padding: 8px 20px; color: #999; border-radius: 3px; margin-left: 8px;
+}
+#nest-create-dialog .alert-close:hover { text-decoration: none; background: rgba(255,255,255,0.15); color: #ccc; }
+.nest-create-field { margin-bottom: 12px; }
+.nest-create-field label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+.nest-create-optional { font-weight: 400; color: #777; }
+.nest-create-field input {
+    width: 100%; box-sizing: border-box;
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #F0F0F0; padding: 9px 12px; font-size: 14px;
+    border-radius: 3px; outline: none;
+}
+.nest-create-field input:focus { border-color: rgba(255,255,255,0.4); }
+.nest-create-field input::placeholder { color: #666; font-size: 13px; }
+.nest-create-hint { margin: 4px 0 0; font-size: 12px; color: #666; }
+.nest-create-actions { text-align: center; margin-top: 16px; }
+.nest-create-submit {
+    display: inline-block; background: rgba(255,255,255,0.15);
+    padding: 9px 28px; color: #ccc; cursor: pointer; border-radius: 3px;
+    font-size: 14px; font-weight: 700;
+}
+.nest-create-submit:hover { text-decoration: none; background: rgba(255,255,255,0.25); color: #fff; }
+#nest-seed-results { margin-top: 4px; }
+.nest-seed-item {
+    padding: 7px 12px; cursor: pointer; font-size: 13px; color: #bbb;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.nest-seed-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+
 .airhorn {
     height: 65px; width:100%;clear:both; overflow: hidden;
     color: #b9b9b9; margin-bottom: 5px;
@@ -368,23 +468,26 @@ background-position: center center;
     border-bottom: 1px solid rgba(0, 0, 0, 0.4);
 }
 
-.nest-listener-section {
-    position: relative;
-    border-bottom: none;
-    border-top: 1px solid rgba(0, 0, 0, 0.4);
+.nest-name-section {
     justify-content: center;
 }
 
 .nest-name {
     font-size: 20px;
-    font-weight: 700;
+    font-weight: 400;
     color: var(--accent-color);
     white-space: nowrap;
 }
+.nest-name strong {
+    font-weight: 700;
+}
+
+.nest-listener-bar {
+    text-align: right;
+    padding: 6px 20px;
+}
 
 .nest-listener-count {
-    position: absolute;
-    right: 20px;
     font-size: 13px;
     color: rgba(var(--accent-color-rgb), 0.6);
     white-space: nowrap;

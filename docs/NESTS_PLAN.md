@@ -1,8 +1,9 @@
 # Nests — Multi-Room Support for Andre
 
-**Status:** Draft / RFC
+**Status:** Phases 1-4 Complete, Phase 5 In Progress
 **Author:** Dylan + Claude
 **Date:** 2026-02-11
+**Last Updated:** 2026-02-11
 
 ---
 
@@ -21,44 +22,34 @@ The current single-queue experience becomes the persistent **Main Nest** (lobby)
 | Creating a session | **Build a Nest** |
 | Joining a session | **Join a Nest** / **Fly in** |
 | The shareable code | **Nest code** |
-| Short URL | `echone.st/X7K2P` |
+| Short URL (code) | `echone.st/X7K2P` |
+| Short URL (slug) | `echone.st/friday-vibes` |
 | Users in a Nest | **Listeners** (or keep existing terminology) |
 
 ### User Flow
 
 1. Open Andre → auto-join the Main Nest (current experience, unchanged)
-2. Click **"Build a Nest"** → get a 5-character code (e.g. `X7K2P`)
-3. Share the code or link (`echone.st/X7K2P`)
+2. Click **"Build a Nest"** → modal dialog with optional name and seed track
+3. Share the code or link (`echone.st/X7K2P` or `echone.st/friday-vibes`)
 4. Friends enter code or visit link → join the Nest
 5. Nest has its own queue, voting, jams, Bender, now-playing — fully independent
 6. Nest auto-deletes after configurable period of inactivity (no listeners + empty queue)
-   - **Note:** With the 10-minute TTL, temporary nests will disappear quickly if everyone leaves; keep a tab open if you plan to return.
+   - **Note:** With the 5-minute TTL, temporary nests will disappear quickly if everyone leaves; keep a tab open if you plan to return.
 
 ### Domain Setup
 
 `echone.st` is the primary domain. Andre is served directly from it via Caddy.
 `andre.dylanbochman.com` 301-redirects to `echone.st`. Bare nest codes
-(`echone.st/X7K2P`) are caught by a Flask catch-all route and redirected to `/nest/X7K2P`.
+(`echone.st/X7K2P`) and slugs (`echone.st/friday-vibes`) are caught by a Flask
+catch-all route and redirected to `/nest/{CODE}`.
 
 ---
 
 ## Architecture
 
-### Core Principle: Nest-Scoped Redis Keys
+### Core Principle: Nest-Scoped Redis Keys — DONE
 
-Currently, all state lives under flat Redis keys like:
-
-```
-MISC|now-playing          → current song ID
-MISC|priority-queue       → sorted set of queue
-QUEUE|{song_id}           → hash of song metadata
-QUEUE|VOTE|{song_id}      → vote tracking
-FILTER|{track_uri}        → bender filter
-BENDER|cache:genre        → recommendation cache
-MISC|update-pubsub        → pub/sub channel
-```
-
-**Proposed:** Prefix all nest-scoped keys with `NEST:{nest_id}|`:
+All state lives under `NEST:{nest_id}|`-prefixed Redis keys:
 
 ```
 NEST:main|MISC|now-playing
@@ -74,56 +65,57 @@ NEST:X7K2P|MISC|priority-queue
 ...etc
 ```
 
-The Main Nest uses `nest_id = "main"`.
+The Main Nest uses `nest_id = "main"`. The `_key()` method on the `DB` class is the single choke point — every Redis operation goes through it. This means all existing logic (queue ordering, voting, Bender, etc.) works unchanged per-nest.
 
-### Nest Registry
+### Nest Registry — DONE
 
 A top-level Redis hash tracks all active nests:
 
 ```
 NESTS|registry            → hash { nest_id: JSON metadata }
 NESTS|code:{code}         → string nest_id (lookup index)
+NESTS|slug:{slug}         → string nest_id (slug lookup index)
 ```
 
 Each nest's metadata:
 
 ```json
 {
-  "id": "X7K2P",
+  "nest_id": "X7K2P",
   "code": "X7K2P",
   "name": "Friday Vibes",
-  "created_by": "dylan@example.com",
+  "slug": "friday-vibes",
+  "creator": "dylan@example.com",
   "created_at": "2026-02-10T15:30:00",
   "last_activity": "2026-02-10T16:45:00",
   "ttl_minutes": 5,
-  "is_main": false
+  "is_main": false,
+  "seed_uri": "spotify:track:xxx",
+  "genre_hint": "jazz"
 }
 ```
 
-**Decision:** For MVP, set `nest_id == code`. This keeps URLs stable and avoids an extra lookup. If we later want opaque IDs, add `NESTS|code:{code} -> nest_id` and update routes to resolve code → id via that index.
+**Implementation note:** `nest_id == code` — URLs use the actual ID and no extra lookup is required. The `seed_uri` and `genre_hint` fields are optional, present only when the creator supplies a seed track.
 
 The Main Nest entry is permanent and cannot be deleted.
 
-### Nest Membership Tracking
+### Nest Membership Tracking — DONE
 
 ```
 NEST:{nest_id}|MEMBERS    → set of user emails currently connected
-NEST:{nest_id}|MEMBER:{email} → TTL key updated by heartbeat (optional)
+NEST:{nest_id}|MEMBER:{email} → TTL key updated by heartbeat (90s TTL, refreshed every 30s)
 ```
 
-Updated on WebSocket connect/disconnect, with an optional heartbeat TTL per user to avoid stale memberships. Used for:
+Updated on WebSocket connect/disconnect, with heartbeat TTL per user to avoid stale memberships. Used for:
 - Showing "N listeners" in UI
 - Determining inactivity (empty set + empty queue = candidate for cleanup)
+- `count_active_members()` prunes stale members whose heartbeat key has expired
 
 ---
 
 ## Backend Changes
 
-### 1. DB Class — Nest-Aware Key Generation
-
-The `DB` class currently hardcodes Redis keys. Add a `nest_id` parameter that scopes all operations.
-
-**Approach A (recommended): Nest context on DB instance**
+### 1. DB Class — Nest-Aware Key Generation — DONE
 
 ```python
 class DB(object):
@@ -136,250 +128,208 @@ class DB(object):
         return f"NEST:{self.nest_id}|{key}"
 ```
 
-Then refactor all Redis key references to use `self._key(...)`:
+All Redis key references use `self._key(...)`. A `DB("main")` instance behaves identically to the original single-instance DB.
 
-```python
-# Before
-self._r.get('MISC|now-playing')
-
-# After
-self._r.get(self._key('MISC|now-playing'))
-```
-
-The `_key()` method is the single choke point — every Redis operation goes through it. This means:
-- All existing logic (queue ordering, voting, Bender, etc.) works unchanged per-nest
-- No need to duplicate any business logic
-- A `DB("main")` instance behaves identically to today's single-instance DB
-
-**Global keys that should NOT be nest-scoped:**
+**Global keys that are NOT nest-scoped:**
 - `MISC|spotify-rate-limited` (shared across all nests)
-- `FILTER|{track_uri}` could go either way (nest-scoped means the same song can play in two nests simultaneously — probably desired)
+- `NESTS|registry`, `NESTS|code:*`, `NESTS|slug:*` (global lookup indices)
 
-### 2. Nest CRUD Operations
+### 2. Nest CRUD Operations — DONE
 
-New methods on a `NestManager` class (or on DB):
+`NestManager` class in `nests.py`:
 
 ```python
 class NestManager:
-    def create_nest(self, creator_email, name=None) -> dict:
-        """Build a new nest with a random 5-char code. Returns nest metadata."""
-
-    def get_nest(self, nest_id) -> dict:
-        """Get nest metadata. Returns None if nest doesn't exist."""
-
-    def list_nests(self) -> list:
-        """List all active nests (returns [(nest_id, metadata), ...])."""
-
-    def delete_nest(self, nest_id):
-        """Delete a nest and all its Redis keys."""
-
-    def touch_nest(self, nest_id):
-        """Update last_activity timestamp."""
-
-    def join_nest(self, nest_id, email):
-        """Add user to nest's member set."""
-
-    def leave_nest(self, nest_id, email):
-        """Remove user from nest's member set."""
-
-    def generate_code(self) -> str:
-        """Generate a unique 5-char alphanumeric code (uppercase, no ambiguous chars)."""
+    def create_nest(self, creator_email, name=None, seed_track=None) -> dict
+    def get_nest(self, nest_id) -> dict          # Looks up by nest_id, code, or slug
+    def list_nests(self) -> list                  # Returns [(nest_id, metadata), ...]
+    def delete_nest(self, nest_id)                # Deletes all NEST:{id}|* keys
+    def touch_nest(self, nest_id)                 # Updates last_activity
+    def join_nest(self, nest_id, email)           # Adds to MEMBERS set
+    def leave_nest(self, nest_id, email)          # Removes from MEMBERS set
+    def generate_code(self) -> str                # Unique 5-char code
 ```
 
-**Code generation:** Use uppercase alphanumeric minus ambiguous characters (`0/O`, `1/I/L`). Character set: `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (30 chars). 5 characters = 30^5 = ~24.3 million possible codes. Collision check against `NESTS|registry`.
+**Code generation:** Character set `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (30 chars, no ambiguous 0/O/1/I/L). 5 characters = 30^5 = ~24.3M possible codes. Collision check against registry.
 
-**Free tier cap:** If creator is not premium and active free nests >= `NEST_FREE_MAX_ACTIVE`, reject creation (HTTP 403/429) with a clear upgrade prompt.
+**Queue depth limit:** Temporary nests enforce `NEST_MAX_QUEUE_DEPTH` (default 25). Main nest has no limit.
 
-**Error payload (example):**
-```json
-{
-  "error": "nest_limit_reached",
-  "message": "Free nests are currently at capacity. Upgrade to create a new nest.",
-  "upgrade_url": "/billing/upgrade"
-}
-```
+**Race-resistant deletion:** A `DELETING` flag with 30s TTL blocks writes during cleanup. All nest-scoped operations check this flag before writing.
 
-**UI copy (suggested):**
-- Title: “Nests at Capacity”
-- Body: “Free nests are full right now. Upgrade to build a new nest instantly.”
-- CTA: “Upgrade to Pro”
+### 3. Nest Auto-Generated Names — DONE
 
-### 3. Nest Cleanup Worker
+50 sonic/audio-themed names in `NEST_NAMES` tuple (e.g., WaveyNest, BassNest, FunkNest, etc.). When no name is provided, `_pick_random_name()` selects an unused name. If all 50 are taken, appends a numeric suffix.
 
-Add to `master_player.py` (or a separate worker):
+### 4. Seed Track & Genre Identity — DONE
 
-```python
-def nest_cleanup_loop():
-    """Periodically check for inactive nests and delete them."""
-    while True:
-        for nest_id, metadata in nest_manager.list_nests():
-            if metadata['is_main']:
-                continue
-            last_activity = parse_iso(metadata['last_activity'])
-            inactive_minutes = (now - last_activity).total_seconds() / 60
-            members = r.scard(f'NEST:{nest_id}|MEMBERS')
-            queue_size = r.zcard(f'NEST:{nest_id}|MISC|priority-queue')
-            if inactive_minutes > metadata['ttl_minutes'] and members == 0 and queue_size == 0:
-                nest_manager.delete_nest(nest_id)
-        sleep(60)  # Check every minute
-```
+**NEST_SEED_MAP:** Each auto-generated name maps to a `(spotify_track_uri, genre_keyword)` tuple. 50 entries covering genres from funk to techno to afrobeat.
 
-**Cleanup deletes all `NEST:{nest_id}|*` keys** using a Redis SCAN + DELETE pattern. This is safe because nest keys are fully namespaced.
+**User-supplied seed tracks:** When `seed_track` (a `spotify:track:xxx` URI) is provided at creation:
+1. Validate URI format (must start with `spotify:track:`)
+2. Call `_resolve_track_seed()` → Spotify API lookup for artist genres
+3. Store `seed_uri` and `genre_hint` in nest metadata
 
-### 4. WebSocket Changes
+**Bender seed resolution priority (most specific wins):**
+1. Explicit `seed_uri` from metadata (user supplied a track)
+2. `NEST_SEED_MAP` lookup by nest name (auto-generated themed name)
+3. `_DEFAULT_SEED` (Billy Joel - Piano Man)
 
-Currently, `MusicNamespace` subscribes to a single pub/sub channel (`MISC|update-pubsub`). With nests:
+**Bender genre boosting:** `_get_nest_genre_hint()` returns the genre for this nest (explicit metadata → name-based lookup → None). When present, adds +20 flat bonus to the `genre` strategy weight.
 
-- Each nest gets its own channel: `NEST:{nest_id}|MISC|update-pubsub`
-- On WebSocket connect, the client specifies which nest to join (via URL path or initial message)
-- `MusicNamespace.__init__` takes a `nest_id` parameter
-- The listener subscribes to that nest's channel
-- The `DB` instance is created with the matching `nest_id`
+### 5. Throwback Strategy Scoping — DONE
 
-```python
-class MusicNamespace(WebSocketManager):
-    def __init__(self, email, penalty, nest_id="main"):
-        super().__init__()
-        self.nest_id = nest_id
-        self.db = DB(nest_id=nest_id, init_history_to_redis=False)
-        # ...
-```
+Throwback relies on play history which only exists for the main queue. For non-main nests, throwback is disabled at four levels:
 
-### 5. App Routes
+1. **`_get_strategy_weights()`** — removes `throwback` from weight pool
+2. **`_fill_strategy_cache()`** — returns 0 immediately for throwback
+3. **`ensure_fill_songs()`** — skips throwback cache key check
+4. **`get_fill_song()` rate-limit fallback** — throwback-only path scoped to main
 
-New routes:
+### 6. Nest Cleanup Worker — DONE
+
+In `master_player.py`, the cleanup loop checks every 60 seconds:
+- Skip main nest
+- Check `last_activity` against `ttl_minutes`
+- Check member count (with stale member pruning)
+- Check queue size
+- Delete if inactive + empty
+
+Cleanup uses Redis `SCAN` + `UNLINK` (non-blocking) to remove all `NEST:{id}|*` keys, plus the code and slug lookup keys.
+
+### 7. WebSocket Changes — DONE
+
+- Each nest has its own pub/sub channel: `NEST:{nest_id}|MISC|update-pubsub`
+- WebSocket path: `/socket` (main) or `/socket/{nest_id}` (specific nest)
+- `MusicNamespace` creates a `DB(nest_id=...)` instance for the connected nest
+- On connect: `join_nest()` + heartbeat TTL key
+- On disconnect: `leave_nest()` + delete heartbeat key
+- Serve loop refreshes heartbeat TTL every 30s
+
+### 8. App Routes — DONE
 
 ```
-POST /api/nests              → Build a nest (returns code + nest_id)
-GET  /api/nests              → List active nests
+POST /api/nests              → Build a nest (returns code, slug, metadata)
+GET  /api/nests              → List active nests (with now-playing, member count)
 GET  /api/nests/{code}       → Get nest info
-PATCH /api/nests/{code}      → Update nest (name, bender toggle) — creator only
+PATCH /api/nests/{code}      → Update nest (name) — creator only
 DELETE /api/nests/{code}     → Delete nest (creator only)
-GET  /nest/{code}            → Serve the main UI with nest context
+GET  /nest/{code}            → Serve main UI with nest context
+GET  /{slug}                 → Catch-all resolves slug → redirect to /nest/{code}
+GET  /{CODE}                 → Catch-all resolves 5-char code → redirect to /nest/{CODE}
 ```
 
-The WebSocket upgrade in `before_request` needs to extract the nest from the request path:
+### 9. Slug URLs — DONE
 
-```
-/socket              → main nest (default, backward compatible)
-/socket/{nest_id}    → specific nest
-```
+Custom-named nests generate URL slugs via `slugify()`:
+- Lowercase, replace non-alphanumeric with hyphens, strip leading/trailing hyphens
+- Stored in metadata as `slug` field
+- Redis lookup: `NESTS|slug:{slug}` → nest_id
+- Catch-all route resolves slugs: `echone.st/friday-vibes` → `/nest/{CODE}`
+- Slug lookup cleaned up on nest deletion
+- `get_nest()` resolves by nest_id, code, or slug
 
-### 6. Master Player — Per-Nest Playback
+### 10. Master Player — Per-Nest Playback — DONE
 
-The `master_player()` loop currently manages one queue. With nests, it needs to manage all active nests:
+Single worker iterates over all active nests (Option A from original plan):
 
-**Option A: Single worker, iterate over nests**
 ```python
-def master_player(self):
-    while True:
-        for nest_id in nest_manager.get_active_nest_ids():
-            db = DB(nest_id=nest_id)
-            # Run one iteration of playback logic for this nest
-            db._master_player_tick()
-        sleep(1)
+for nest_id in nest_manager.get_active_nest_ids():
+    db = DB(nest_id=nest_id)
+    db._master_player_tick()
 ```
-
-**Option B: Spawn a greenlet per nest**
-Each nest gets its own master_player greenlet, spawned on nest creation, killed on nest deletion. More responsive but more complex.
-
-**Recommendation:** Start with Option A. The master_player loop is already polling-based. Iterating over a handful of nests adds negligible overhead. Move to Option B only if latency becomes noticeable with many concurrent nests.
 
 ---
 
 ## Frontend Changes
 
-### 1. Nest UI Components
+### 1. Nest Bar UI — DONE
 
-- **Nest bar** at the top of the page showing current nest name + code + "Copy Link" button
-- **"Build a Nest"** button (opens modal: nest name, creates nest, shows code)
-- **"Join a Nest"** input field (enter code → navigate to `/nest/{code}`)
-- **Listener count** badge
-- **"Back to Main Nest"** link (when in a temporary nest)
+- Top bar shows nest name + code + "Copy Link" button
+- Listener count badge
+- "Back to Main Nest" link (when in a temporary nest)
+- "Build a Nest" and "Join a Nest" buttons
 
-### 2. WebSocket Connection
+### 2. Create Nest Dialog — DONE
 
-Currently connects to `/socket`. With nests:
+Modal dialog (replaces browser `prompt()`) with:
+- **Name field** (optional) — leave blank for auto-generated sonic name
+- **Seed Track field** (optional, visible only when custom name entered):
+  - Paste `spotify:track:...` URI directly, OR
+  - Type to search — debounced Spotify search (300ms) shows top 5 results
+  - Click a result to fill the URI
+  - Sets genre vibe for Bender auto-fills
+- Dark backdrop overlay prevents background scroll/interaction
+- Centered with `max-height: 80vh` and scrollable content
+- Click backdrop or Cancel to dismiss
+
+### 3. Join Nest Dialog — DONE
+
+Modal dialog with:
+- **Active nests list** — shows name, now-playing track, member count for each nest (excluding current)
+- **Scrollable list** with independent scroll (not page scroll)
+- **Manual code entry** — 5-char code input pinned at bottom
+- Dark backdrop overlay, centered, `max-height: 80vh`
+- Click backdrop or Close to dismiss
+- Click any nest in list to join directly
+
+### 4. WebSocket Connection — DONE
 
 ```javascript
-// In Main Nest (default)
-var socket = new Socket('/socket');
-
-// In a nest
-var socket = new Socket('/socket/' + nestId);
+var socket = new Socket('/socket/' + nestId);  // nestId from template context
 ```
 
-The nest ID comes from:
-- URL path: `/nest/X7K2P` → extract code, resolve to nest_id
-- Or passed via the template context from Flask
-
-### 3. URL Routing
+### 5. URL Routing — DONE
 
 ```
 /                    → Main Nest (current behavior)
-/nest/{code}         → specific nest (same UI, different data)
+/nest/{code}         → Specific nest (same UI, different data)
+/{slug}              → Redirect to /nest/{code} via slug lookup
+/{CODE}              → Redirect to /nest/{CODE} via code match
 ```
 
-External short URL:
-```
-echone.st/X7K2P      → Flask catch-all redirects to /nest/X7K2P
-```
+After creating a nest with a custom name, the browser redirects to `/{slug}`. Random-named nests redirect to `/nest/{CODE}`.
 
-Since the frontend is Backbone.js with no client-side routing, the simplest approach is to pass the `nest_id` into the template context and have `app.js` use it for the WebSocket connection and API calls.
+### 6. Airhorn Sync — DONE
 
-### 4. Nest Indicator
-
-When in a nest (not Main Nest), show:
-- Nest name and code prominently
-- A **"Share Nest"** button that copies `echone.st/X7K2P` to clipboard
-- Listener count
-- If creator: inline edit for the nest name (or modal)
-- "Back to Main Nest" link
-
-When in the Main Nest, show a subtle "Build a Nest" button (doesn't clutter the existing UI).
+Airhorn sound plays locally as confirmation when `sync-audio` event is received.
 
 ---
 
 ## Migration Strategy
 
-### Phase 1: Backend Key Migration (Zero Downtime)
+### Phase 1: Backend Key Migration — DONE
 
-1. Add `_key()` method to DB class
-2. Refactor all Redis key references to use `_key()`
+1. Added `_key()` method to DB class
+2. Refactored all Redis key references to use `_key()`
 3. Default `nest_id="main"`
-4. Deploy a compatibility build that reads both `MISC|*` and `NEST:main|MISC|*` (write to both if needed)
-5. Run a one-time migration script (`migrate_keys.py`) that renames existing keys using `DUMP`+`RESTORE`+`DEL`:
-   ```
-   MISC|now-playing → NEST:main|MISC|now-playing
-   ```
-   - Must expose a `migrate()` function (contract tests verify this)
-   - Uses `SCAN` to cover ALL 9 Redis key prefix families (see Redis Key Reference below)
-   - Idempotent: skips keys that already have `NEST:` prefix; skips if destination exists
-6. Deploy a cleanup build that stops reading legacy keys — behavior is identical, all data now lives under `NEST:main|*`
+4. Migration script (`migrate_keys.py`) renames existing keys using `DUMP`+`RESTORE`+`DEL`
+   - Covers all 9 Redis key prefix families
+   - Idempotent: skips keys with `NEST:` prefix; skips if destination exists
+5. `SKIP_SPOTIFY_PREFETCH` env var guards module-level Spotify auth for test environments
 
-### Phase 2: Nest Backend
+### Phase 2: Nest Backend — DONE
 
-1. Add `NestManager` class in `nests.py` (module at project root — tests import via `importlib.import_module("nests")`)
-   - Scaffold already exists with `NotImplementedError` stubs; implementation replaces stubs
-   - Helper functions (pure) + `NestManager` (Redis CRUD) + module-level `join_nest`/`leave_nest` wrappers all live in this one file
-   - Helpers that need Redis take an explicit `redis_client` parameter (no global singleton)
-2. Add nest CRUD API routes
-3. Make WebSocket accept nest_id
-4. Add nest cleanup to master_player
-5. Deploy — nests work but there's no UI for them yet (API-only)
-6. Add creator-only update endpoint (vanity name + optional bender toggle)
+1. `NestManager` class in `nests.py` with full CRUD
+2. Helper functions (pure) + NestManager (Redis CRUD) + module-level wrappers
+3. Nest CRUD API routes
+4. WebSocket accepts `nest_id`, per-nest DB instances
+5. Nest cleanup in master_player
+6. Creator-only update endpoint (PATCH)
+7. Queue depth limit (25 songs for temp nests)
+8. Race-resistant deletion (DELETING flag)
 
-### Phase 3: Nest Frontend
+### Phase 3: Nest Frontend — DONE
 
-1. Add nest bar UI
-2. Add "Build a Nest" / "Join a Nest" flows
-3. Add `/nest/{code}` route
-4. Deploy — full feature live
+1. Nest bar UI with name, code, listener count, copy link
+2. Create Nest modal with name + seed track picker
+3. Join Nest modal with active nests list + manual code entry
+4. `/nest/{code}` route serves UI with nest context
+5. Backdrop overlays and scrollable dialogs
 
 ### Phase 4: echone.st Domain — DONE
 
-Domain is registered (Netim, Lite Hosting, expires 2027-02-11) and configured on Cloudflare.
-echone.st is now the **primary domain** — served directly by Caddy on the DigitalOcean droplet.
+Domain registered (Netim, Lite Hosting, expires 2027-02-11) and configured on Cloudflare.
+echone.st is the **primary domain** — served directly by Caddy on the DigitalOcean droplet.
 
 **Cloudflare Zone:**
 - Zone ID: `583f76bbb1bd8c655b86958885fdef76`
@@ -395,29 +345,68 @@ echone.st is now the **primary domain** — served directly by Caddy on the Digi
 - `www.echone.st` → 301 redirect to `echone.st`
 - `andre.dylanbochman.com` → 301 redirect to `echone.st`
 
-**Page Rules:** Cloudflare page rules removed — Caddy and Flask handle all routing.
+**Routing:** Flask catch-all resolves both bare 5-char codes and slug URLs.
 
-**Nest code routing:** Flask catch-all route matches bare 5-char nest codes
-(`echone.st/X7K2P`) and redirects to `/nest/X7K2P`.
+### Phase 5: Polish — IN PROGRESS
 
-**Remaining TODO:**
-- Update "Share Nest" button to use `echone.st/{code}` short URL
+Completed:
+- [x] Auto-generated sonic nest names (50 themed names)
+- [x] NEST_SEED_MAP with genre-specific Bender seeding per nest name
+- [x] User-supplied seed track at creation (Spotify URI → genre resolution)
+- [x] Throwback disabled for non-main nests
+- [x] Slug URLs for custom-named nests (`echone.st/friday-vibes`)
+- [x] Modal dialogs with backdrop overlay and scrollable lists
+- [x] Seed track search UI with Spotify lookup
+- [x] Dead Spotify URI audit and replacement (15 of 50 fixed)
+- [x] Active nests with now-playing shown in Join dialog
+- [x] Queue depth limit (25 songs) for temporary nests
 
-### Phase 5: Polish
-
-1. Nest names / theming per nest
-2. Nest history (what played in this nest)
-3. Nest-specific Bender settings (genre weights, on/off toggle)
-4. "Active Nests" discovery on landing page
-5. Nest creator controls (kick listener, lock nest)
-6. Nest-specific branding/emoji in share links
-7. **Paid Admin Console** (see below)
+Remaining:
+- [ ] Nest history (what played in this nest)
+- [ ] Nest-specific Bender weight sliders (creator controls)
+- [ ] Nest creator controls (kick listener, lock nest)
+- [ ] Nest-specific branding/emoji in share links
+- [ ] **Paid Admin Console** (see below)
 
 ---
 
-## Configuration
+## Bender Strategy Architecture (per-nest)
 
-New config options:
+### Strategy Weights
+
+Default weights (from config or `STRATEGY_WEIGHTS_DEFAULT`):
+
+| Strategy | Weight | Notes |
+|----------|--------|-------|
+| genre | 35 (+20 if genre hint) | Searches Spotify by genre keyword |
+| throwback | 30 | **Main nest only** — disabled for temp nests |
+| artist_search | 25 | Searches for artist collaborations |
+| top_tracks | 5 | Top tracks from seed artist |
+| album | 5 | Other tracks from same album |
+
+### Seed Resolution Chain
+
+For each Bender fill, the seed is resolved in order:
+1. Last user-queued track URI
+2. Last Bender-added track URI
+3. Currently playing track
+4. Fallback seed (see below)
+
+### Fallback Seed Priority
+
+1. **Explicit `seed_uri`** from nest metadata (user supplied a seed track at creation)
+2. **`NEST_SEED_MAP`** lookup by nest name (auto-generated themed names)
+3. **`_DEFAULT_SEED`** — Billy Joel "Piano Man" (main nest, unknown names)
+
+### Genre Hint Injection
+
+When a nest has a genre hint (explicit or name-derived), the genre is injected into `_fetch_genre_tracks()` with double weight (~50% selection chance alongside artist genres). This ensures genre-themed nests stay on-genre even when the seed artist has diverse genres.
+
+---
+
+## Configuration — DONE
+
+Active config options in `config.yaml`:
 
 ```yaml
 # Nests
@@ -426,7 +415,12 @@ NEST_MAX_INACTIVE_MINUTES: 5      # Auto-delete after 5 minutes of inactivity
 NEST_MAX_ACTIVE: 20               # Max concurrent nests (prevents resource abuse)
 NEST_CODE_LENGTH: 5               # Characters in nest code
 NEST_BENDER_DEFAULT: true         # Whether Bender runs in new nests by default
+NEST_MAX_QUEUE_DEPTH: 25          # Max songs in temp nest queue
 ECHONEST_DOMAIN: echone.st        # Short-link domain for sharing
+```
+
+Future config options (not yet implemented):
+```yaml
 NEST_ALLOW_VANITY: true           # Allow custom nest names
 NEST_VANITY_MAX_LEN: 40           # Max length for display name
 NEST_VANITY_ALLOW_RENAME: true    # Allow creator to rename after creation
@@ -443,6 +437,8 @@ NEST_FREE_MAX_ACTIVE: 50          # Max concurrent free nests (block create when
 ### Global Keys (not nest-scoped)
 ```
 NESTS|registry                          → hash of all nests
+NESTS|code:{code}                       → string nest_id (code lookup)
+NESTS|slug:{slug}                       → string nest_id (slug lookup)
 MISC|spotify-rate-limited               → rate limit flag
 ```
 
@@ -460,23 +456,24 @@ NEST:{id}|MISC|bender_streak_start      → bender streak timestamp
 NEST:{id}|MISC|update-pubsub            → pub/sub channel
 NEST:{id}|MISC|volume                   → volume level
 NEST:{id}|MISC|paused                   → pause state
+NEST:{id}|MISC|DELETING                 → flag during nest deletion (30s TTL)
 NEST:{id}|QUEUE|{song_id}              → hash (song metadata)
 NEST:{id}|QUEUE|VOTE|{song_id}         → vote data
 NEST:{id}|FILTER|{track_uri}           → bender recently-played filter
 NEST:{id}|BENDER|seed-info             → hash (current seed artist)
 NEST:{id}|BENDER|cache:genre           → list (cached recommendations)
-NEST:{id}|BENDER|cache:throwback       → list
+NEST:{id}|BENDER|cache:throwback       → list (main nest only)
 NEST:{id}|BENDER|cache:artist-search   → list
 NEST:{id}|BENDER|cache:top-tracks      → list
 NEST:{id}|BENDER|cache:album           → list
-NEST:{id}|BENDER|throwback-users       → hash (user attribution)
+NEST:{id}|BENDER|throwback-users       → hash (user attribution, main nest only)
 NEST:{id}|BENDER|next-preview          → hash (next bender song preview)
 NEST:{id}|MEMBERS                      → set of connected user emails
-NEST:{id}|MEMBER:{email}              → heartbeat TTL key (per-member liveness)
-NEST:{id}|QUEUEJAM|{song_id}         → sorted set of jams (actual key in db.py)
+NEST:{id}|MEMBER:{email}              → heartbeat TTL key (90s, per-member liveness)
+NEST:{id}|QUEUEJAM|{song_id}         → sorted set of jams
 NEST:{id}|COMMENTS|{song_id}          → sorted set of comments
 NEST:{id}|FILL-INFO|{trackid}         → hash (cached Spotify metadata for auto-fill)
-NEST:{id}|AIRHORNS                     → list of airhorn events (actual key in db.py)
+NEST:{id}|AIRHORNS                     → list of airhorn events
 NEST:{id}|FREEHORN_{userid}            → set of free airhorn eligible songs
 ```
 
@@ -484,35 +481,90 @@ NEST:{id}|FREEHORN_{userid}            → set of free airhorn eligible songs
 
 ## Implementation Notes
 
-### Code → ID Mapping
+### Decisions Made (see `docs/NESTS_DECISION_LOG.md` for full details)
 
-- **MVP decision:** `nest_id == code`, so URLs use the actual ID and no extra lookup is required.
-- **If we later decouple:** add `NESTS|code:{code} -> nest_id` and resolve all inbound routes via that index. Keep `code` in metadata for display.
+| # | Decision | Rationale |
+|---|----------|-----------|
+| D001 | Migration uses DUMP+RESTORE+DEL | Idempotent, safe for partial re-runs |
+| D002 | GET /api/nests requires auth | Prevents leaking nest names/codes/creators |
+| D003 | Migration covers all 9 key families | Prevents orphaned data |
+| D004 | Heartbeat TTL for stale members | Prevents stale memberships blocking cleanup |
+| D005 | Spotify rate limit key stays global | Rate limiting is per-app, not per-nest |
+| D006 | No hold period on vanity release | Simplicity for MVP |
+| D007 | POST /api/nests returns 200 | Matches existing contract tests |
+| D008 | Single test file with xfail contracts | Contract tests as primary suite |
+| D009 | Admin access is creator-only | No admin role system for MVP |
+| D010 | /nest/{code} pages require auth | Consistent with app-wide OAuth gate |
+| D016 | SKIP_SPOTIFY_PREFETCH guard | Allows clean imports in test environments |
+| D017 | echone.st as primary domain | Cleaner than redirect chain |
 
-### Membership Heartbeats (avoid stale listeners)
+### Resolved Open Questions
 
-- On WebSocket connect, add email to `NEST:{id}|MEMBERS` and set `NEST:{id}|MEMBER:{email}` with a short TTL (e.g., 60–120s).
-- On client heartbeat (e.g., every 30s), refresh the TTL.
-- Cleanup uses `MEMBERS` but can optionally prune any members whose `MEMBER:{email}` key is missing before counting.
+1. ~~Vanity limit~~ → 1 vanity per paid nest, no hold period (D006)
+2. ~~Admin eligibility~~ → Creator-only by `created_by` email (D009)
+3. ~~Font whitelist~~ → Not yet needed (future Phase 5)
+4. ~~Should Bender run in temporary nests?~~ → **Yes**, with genre-aware seeding per nest name/seed track. Throwback disabled for non-main nests.
+5. ~~Multiple nests simultaneously?~~ → No, one nest at a time per WebSocket
+6. ~~Nest persistence across deploys?~~ → Yes, Redis persists (RDB/AOF)
+7. ~~Private nests?~~ → Not for MVP, future Phase 5
+8. ~~Throwback data shared or per-nest?~~ → **Shared play history, but throwback strategy disabled for non-main nests.** Play history is global; throwback caches are nest-scoped but only populated for main.
+9. ~~Main vs temporary feature parity?~~ → Yes, except throwback (main only)
+10. ~~echone.st domain~~ → **DONE.** Registered and configured.
 
-### Vanity Nests (curated names)
+### Remaining Open Questions
 
-- **Supported for MVP:** allow creators to set a display name on creation; allow editing only by the creator.
-- **Storage:** `name` in nest metadata (already present); keep it sanitized and length-limited.
-- **Validation:** strip leading/trailing whitespace, collapse internal whitespace, reject empty or all-symbol names, limit length (`NEST_VANITY_MAX_LEN`).
-- **Display:** show `name` in UI; if absent, default to `Nest {CODE}`.
-- **Abuse control:** rate-limit renames (`NEST_VANITY_RATE_LIMIT_MIN`) and apply auth checks (creator only).
-
-### Update Endpoint (PATCH /api/nests/{code})
-
-- **Request body (JSON):** `{ "name": "Friday Vibes", "bender_enabled": true }` (fields optional)
-- **Auth:** creator-only (match `created_by`); return 403 otherwise.
-- **Validation:** apply the same name rules as create; ignore no-op updates; return 400 for invalid.
-- **Side effects:** update `last_activity`, publish an update on the nest pub/sub channel so clients refresh the nest bar.
+1. **Slug collision handling:** What happens when two nests produce the same slug? Currently last-write-wins. Should we enforce uniqueness? (Low priority — nests are ephemeral.)
+2. **Seed track validation:** Should we verify the Spotify track exists before storing? Currently we store the URI even if Spotify lookup fails (graceful degradation).
 
 ---
 
-## Paid Admin Console (Feature Gate)
+## Test Suite
+
+### Running Tests
+
+```bash
+# All nest tests
+SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py -v
+
+# All tests (ensure no regressions)
+SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest -v
+```
+
+### Test Coverage (78 tests in test/test_nests.py)
+
+| Category | Tests | Status |
+|----------|-------|--------|
+| API contract (xfail) | 12 | Skipped (future billing/admin) |
+| Admin API (xfail) | 5 | Skipped |
+| Billing API (xfail) | 7 | Skipped |
+| Super Admin (xfail) | 3 | Skipped |
+| Entitlement gates (xfail) | 3 | Skipped |
+| Audit logs (xfail) | 1 | Skipped |
+| Invite-only (xfail) | 2 | Skipped |
+| Free cap (xfail) | 1 | Skipped |
+| Auth gating (xfail) | 2 | Skipped |
+| Redis key prefixing | 1 | xpass |
+| Cleanup logic | 1 | xpass |
+| Membership heartbeat | 1 | xpass |
+| Migration helpers | 2 | xpass |
+| PubSub channels | 1 | xpass |
+| Master player multi-nest | 1 | xpass |
+| WebSocket membership | 2 | xpass |
+| Migration script behavior | 2 | xpass |
+| NestManager CRUD | 6 | Passing |
+| Count active members | 3 | Passing |
+| Delete main guard | 1 | Passing |
+| Cross-nest isolation | 5 | Passing |
+| Queue depth limit | 2 | Passing |
+| Race-resistant deletion | 5 | Passing |
+| Nest seed map | 5 | Passing |
+| Seed track metadata | 5 | Passing |
+
+**Total: 32 passed, 36 skipped, 10 xpassed**
+
+---
+
+## Paid Admin Console (Feature Gate) — NOT STARTED
 
 **Goal:** Monetize advanced nest controls and vanity URLs with a paid admin interface.
 
@@ -534,7 +586,7 @@ NEST:{id}|FREEHORN_{userid}            → set of free airhorn eligible songs
    - **Bender**: enable toggle, sliders for weights/limits.
    - **Moderation**: kick/ban list, ban search, recent actions.
 4. **Save model**: changes are explicit Save/Cancel (avoid live changes) and publish to pub/sub on save.
-5. **Audit**: show “Last updated by {user} at {timestamp}” per section.
+5. **Audit**: show "Last updated by {user} at {timestamp}" per section.
 
 ### Vanity URL Policy (robust defaults)
 
@@ -542,19 +594,8 @@ NEST:{id}|FREEHORN_{userid}            → set of free airhorn eligible songs
 - **Length**: 3–24 characters.
 - **Reserved words**: `admin`, `api`, `socket`, `nest`, `login`, `signup`, `static`, `assets`, `health`, `status`, `metrics`, `terms`, `privacy`.
 - **Collision**: case-insensitive; `jazznight` conflicts with `JazzNight`.
-- **Immutability**: once claimed, only creator can release/change it; old vanity code is released immediately on change (no hold period — confirmed in Open Questions).
+- **Immutability**: once claimed, only creator can release/change it; old vanity code is released immediately on change (no hold period — D006).
 - **Abuse**: block obvious impersonation (configurable denylist).
-
-### Suggested Data Additions
-
-- Nest metadata fields:
-  - `admin_enabled` (bool), `plan` (string), `is_private` (bool)
-  - `theme` (object: colors, font, accent)
-  - `bender` (object: enabled, weights, limits)
-  - `banlist` (set of user email addresses)
-  - `vanity_code` (string) with `NESTS|vanity:{code} -> nest_id`
-  - `invite_token` (string) and `invite_token_rotated_at`
-- Audit trail (optional): `NEST:{id}|AUDIT` list for admin actions (kick/ban/rename/visibility)
 
 ### Admin Routes (paid)
 
@@ -571,7 +612,7 @@ POST /api/nests/{code}/invites/rotate   → rotate invite token
 
 - Gate admin routes via plan checks (`NEST_ADMIN_PLAN`) and a verified billing status.
 - Consider soft-gating: allow UI preview but enforce on save.
-- Vanity URLs can be changed or released by the creator at any time (no hold period, immediate release — see D006).
+- Vanity URLs can be changed or released by the creator at any time (no hold period, immediate release — D006).
 - If a plan lapses, keep current settings but block edits until upgraded.
 - Tier split confirmed:
   - **Tier A:** Vanity URL + Theme
@@ -579,12 +620,7 @@ POST /api/nests/{code}/invites/rotate   → rotate invite token
 
 ---
 
-## Billing Integration (Plan Enforcement)
-
-### Sources of Truth
-
-- Billing provider (e.g., Stripe) is authoritative for plan tier + active status.
-- Cache the entitlements in app DB with a short TTL to reduce API calls.
+## Billing Integration (Plan Enforcement) — NOT STARTED
 
 ### Billing Product Model (confirmed)
 
@@ -595,88 +631,6 @@ POST /api/nests/{code}/invites/rotate   → rotate invite token
 - **Trials:** none.
 - **Upgrades/Downgrades:** proration on upgrade; downgrade effective at period end.
 
-### Entitlements Model
-
-- `plan_tier`: `free`, `tier_a`, `tier_b`
-- `status`: `active`, `past_due`, `canceled`
-- `features`: derived booleans (`vanity`, `theme`, `moderation`, `invite_only`, `bender_controls`)
-
-### Entitlements Data Schema (minimal)
-
-```
-ENTITLEMENTS|{email} -> hash
-  plan_tier: "free" | "tier_a" | "tier_b"
-  status: "active" | "past_due" | "canceled"
-  period_end: "2026-03-01T00:00:00Z"
-  updated_at: "2026-02-11T12:34:56Z"
-  features: JSON string {"vanity":true,"theme":true,"moderation":false,"invite_only":false,"bender_controls":false}
-```
-
-**Cache TTL:** 5–15 minutes (refresh on webhook events).
-
-### Enforcement Points
-
-- **Create nest**: block if free + cap reached (existing rule).
-- **Admin routes**: hard‑block if entitlements don’t include the feature.
-- **UI**: show “Upgrade” state when feature not allowed.
-
-### Lapse Behavior
-
-- Keep existing premium settings in effect, but block changes (read‑only).
-- If the plan is canceled, **release vanity URL immediately**.
-
-### Webhooks / Events
-
-- On payment success: refresh entitlements.
-- On plan change: re-evaluate feature gates immediately.
-- On cancel: lock admin edit routes; optionally queue vanity release.
-
-**Stripe events (minimum set):**
-- `checkout.session.completed`
-- `customer.subscription.created`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `invoice.payment_succeeded`
-- `invoice.payment_failed`
-
-**Subscription status mapping:**
-| Stripe status | App status | Behavior |
-|---|---|---|
-| `trialing` | `active` | (unused; no trials) |
-| `active` | `active` | Full access per tier |
-| `past_due` | `past_due` | Read-only admin, no new changes |
-| `canceled` | `canceled` | Revoke admin edits, release vanity |
-
-### Webhook Ops (setup + reliability)
-
-- **Signing secret:** store in `STRIPE_WEBHOOK_SECRET`.
-- **Idempotency:** store processed event IDs (`STRIPE_EVENT|{id}`) with TTL 30 days.
-- **Retries:** Stripe retries for up to ~3 days; ensure handlers are idempotent.
-- **Out-of-order events:** trust event timestamps; prefer subscription object state on `customer.subscription.updated`.
-- **Alerting:** notify on repeated webhook failures or signature mismatch.
-
-### Payments & Compliance Notes
-
-- Use hosted checkout (PCI reduction). Do not store card data.
-- Webhook verification + idempotency keys on all billing callbacks.
-- Tax/VAT: use Stripe Tax (automatic tax) where available.
-- Billing emails: use Stripe’s customer email + configure receipt/invoice emails.
-- Proration: enable prorations on upgrade; for annual, prorate remaining time and charge immediately.
-- Refunds/chargebacks: 7‑day no‑questions‑asked window; add a manual override path for super admins.
-
-### Billing Data Schema (minimal)
-
-```
-CUSTOMER|{email} -> hash
-  billing_customer_id: "cus_123"
-  subscription_id: "sub_123"
-  price_id: "price_123"
-  plan_tier: "free" | "tier_a" | "tier_b"
-  status: "active" | "past_due" | "canceled"
-  current_period_end: "2026-03-01T00:00:00Z"
-  cancel_at_period_end: "false"
-```
-
 ### Billing Endpoints (minimal)
 
 ```
@@ -686,7 +640,7 @@ POST /api/billing/webhook           → receive provider events
 GET  /api/billing/status            → current plan + entitlements
 ```
 
-### Stripe IDs (config)
+### Stripe Config
 
 ```yaml
 STRIPE_SECRET_KEY: sk_live_...
@@ -698,7 +652,7 @@ STRIPE_PRICE_TIER_B_ANNUAL: price_tier_b_annual
 
 ---
 
-## Metrics, Monitoring & Alerts
+## Metrics, Monitoring & Alerts — NOT STARTED
 
 ### Core Metrics
 
@@ -720,18 +674,18 @@ STRIPE_PRICE_TIER_B_ANNUAL: price_tier_b_annual
 
 ---
 
-## Scaling & Redis Strategy (future‑proofing)
+## Scaling & Redis Strategy (future-proofing) — NOT STARTED
 
 ### When to Consider Sharding
 
 - Sustained Redis ops > 30k/sec with p95 latency > 10ms.
 - Active nests consistently > 500 with high activity.
-- Pub/Sub fan‑out saturating the app server CPU/network.
+- Pub/Sub fan-out saturating the app server CPU/network.
 
 ### Sharding Approach (incremental)
 
 - **Phase 1:** Separate Redis for pub/sub vs data (split hot channels).
-- **Phase 2:** Hash‑shard nests by `nest_id` across multiple Redis instances.
+- **Phase 2:** Hash-shard nests by `nest_id` across multiple Redis instances.
 - **Phase 3:** Redis Cluster or managed shard service.
 
 ### Keying Guideline
@@ -740,7 +694,7 @@ STRIPE_PRICE_TIER_B_ANNUAL: price_tier_b_annual
 
 ---
 
-## Abuse Protections
+## Abuse Protections — NOT STARTED
 
 ### Rate Limits
 
@@ -750,41 +704,24 @@ STRIPE_PRICE_TIER_B_ANNUAL: price_tier_b_annual
 - Admin actions: 20/min per user for kick/ban; invite rotate 5/hour per nest.
 - Vanity claim: 3/day per nest, 10/day per creator.
 
-**Storage & keys (Redis):**
-- `RL|create_nest|user:{email}|{minute}` -> count (TTL 2h)
-- `RL|create_nest|ip:{ip}|{minute}` -> count (TTL 2h)
-- `RL|join_nest|user:{email}|{minute}` -> count (TTL 1h)
-- `RL|join_nest|ip:{ip}|{minute}` -> count (TTL 1h)
-- `RL|admin_action|user:{email}|{minute}` -> count (TTL 1h)
-- `RL|invite_rotate|nest:{id}|{hour}` -> count (TTL 48h)
-- `RL|vanity_claim|nest:{id}|{day}` -> count (TTL 7d)
-- `RL|vanity_claim|user:{email}|{day}` -> count (TTL 7d)
-
-**Proxy/IP handling:** trust `X-Forwarded-For` only if requests are from known reverse proxies; otherwise use `remote_addr`. Keep a `TRUSTED_PROXY_IPS` allowlist.
-
 ### Validation & Sanitization
 
 - Validate vanity codes against policy (see above).
 - Sanitize display names (strip control chars, collapse whitespace).
 - Enforce size limits on comments/jams to avoid key bloat.
 
-### Moderation Safety
-
-- Audit all admin actions to `NEST:{id}|AUDIT`.
-- Shadow‑ban option (optional) for abuse mitigation without escalation.
-
 ---
 
-## Super Admin Interfaces (internal)
+## Super Admin Interfaces (internal) — NOT STARTED
 
 **Purpose:** Operational oversight, billing support, and safety.
 
 ### Super Admin Capabilities
 
 - View/search all nests (by code, creator email, vanity URL).
-- Force‑delete a nest (with reason + audit).
+- Force-delete a nest (with reason + audit).
 - Release/transfer a vanity URL.
-- Override invite‑only and rotate invite token.
+- Override invite-only and rotate invite token.
 - View ban list and unban globally.
 - View billing status + entitlements and force refresh.
 - Throttle/lock a nest temporarily (rate limit abuse).
@@ -793,66 +730,20 @@ STRIPE_PRICE_TIER_B_ANNUAL: price_tier_b_annual
 
 - Super admin access only via a separate allowlist (`SUPER_ADMIN_EMAILS`).
 - MFA required for super admin actions.
-- All super admin actions must write to a global audit log:
-  - `AUDIT|super_admin` list of JSON events.
-- Sensitive actions (force delete, vanity transfer, ban override) require a reason string.
-
-### Super Admin UI (minimal)
-
-- **Nests table:** code, name, creator, plan, active listeners, status.
-- **Nest detail:** metadata, live status, recent actions, admin overrides.
-- **Billing panel:** subscription state, last invoice, plan changes.
-- **Safety panel:** abuse reports, blocked codes, global denylist.
-
----
-
-## Audit Log Schema (minimal)
-
-```
-NEST:{id}|AUDIT -> list of JSON lines
-{
-  "ts": "2026-02-11T12:34:56Z",
-  "actor": "creator@example.com",
-  "action": "ban_user",
-  "target": "user@example.com",
-  "meta": {"reason":"spam"}
-}
-```
-
----
-
-## Open Questions
-
-1. **Vanity limit:** You want 1 vanity per paid nest and no hold period on old vanity codes (confirmed).
-
-2. **Admin eligibility:** Creator-only and defined strictly by `created_by` email (confirmed).
-
-3. **Font whitelist:** Proposed initial list (Winamp-inspired, readable on web): `Tahoma`, `Trebuchet MS`, `Verdana`, `Arial Black`, `Impact`, `Lucida Sans`, `MS Sans Serif` (fallback to `sans-serif`).
-
-4. **Should Bender run in temporary nests?** It's nice for keeping music going, but adds load. Could default to off in temporary nests and let the creator toggle it.
-
-5. **Should users be in multiple nests simultaneously?** Probably not for MVP — you're in one nest at a time. The WebSocket is per-nest. (If we add this later, membership tracking should use session IDs rather than emails.)
-
-6. **Nest persistence across deploys?** Since nests are in Redis and Redis persists (RDB/AOF), nests survive container restarts. But should they survive intentional deploys? Probably yes for short-lived nests.
-
-7. **Private nests?** For MVP, all nests are open (anyone with the code can join). Later: optional password or invite-only.
-
-8. **Should play history (throwback data) be shared across nests or per-nest?** Probably shared — throwback data is historical and global.
-
-9. **Main Nest vs. temporary nest feature parity?** The Main Nest should have every feature temporary nests have. Nests are just isolated instances of the same experience.
-
-10. ~~**echone.st — register now or later?**~~ **DONE.** Domain registered 2026-02-11 via Netim ($21.50/yr). Includes free Lite Hosting for 12 months. Ready to configure.
+- All super admin actions must write to a global audit log.
 
 ---
 
 ## Effort Estimate
 
-| Phase | Scope | Estimate |
-|-------|-------|----------|
-| Phase 1: Key migration | DB refactor + migration script | Small-Medium |
-| Phase 2: Nest backend | NestManager, API routes, WebSocket, cleanup | Medium |
-| Phase 3: Nest frontend | UI components, routing, nest bar | Medium |
-| Phase 4: echone.st | ~~Domain registration~~ + redirect config | Small (domain secured) |
-| Phase 5: Polish | Optional enhancements | Ongoing |
+| Phase | Scope | Status |
+|-------|-------|--------|
+| Phase 1: Key migration | DB refactor + migration script | **DONE** |
+| Phase 2: Nest backend | NestManager, API routes, WebSocket, cleanup | **DONE** |
+| Phase 3: Nest frontend | UI components, routing, nest bar | **DONE** |
+| Phase 4: echone.st | Domain registration + config | **DONE** |
+| Phase 5: Polish | Names, seeds, slugs, throwback scoping, dialogs | **Partially done** |
+| Phase 6: Admin console | Paid features, billing, moderation | Not started |
+| Phase 7: Monitoring | Metrics, alerts, scaling | Not started |
 
-**MVP (Phases 1-3):** Medium-sized project. The key insight is that the `_key()` prefix method means zero business logic changes — the queue algorithm, voting, Bender, etc. all work identically per-nest without modification.
+**MVP (Phases 1-4): COMPLETE.** The core nests feature is fully functional with genre-aware Bender, slug URLs, modal dialogs, and scrollable nest discovery.

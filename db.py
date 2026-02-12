@@ -281,6 +281,30 @@ class DB(object):
             if is_valid_track_seed(candidate):
                 return candidate
 
+        return self._nest_fallback_seed()
+
+    def _nest_fallback_seed(self):
+        """Return the fallback seed URI based on this nest's metadata.
+
+        Priority: explicit seed_uri from metadata (user-supplied) →
+        name-based NEST_SEED_MAP lookup → default Billy Joel track.
+        """
+        from nests import NestManager, get_nest_seed_info
+        try:
+            meta = NestManager(redis_client=self._r).get_nest(self.nest_id)
+            if meta:
+                # Prefer explicit seed_uri from nest creation
+                explicit = meta.get('seed_uri')
+                if explicit:
+                    logger.debug("Using explicit seed_uri for nest '%s': %s",
+                                 meta.get('name', ''), explicit)
+                    return explicit
+                uri, _ = get_nest_seed_info(meta.get('name', ''))
+                logger.debug("Using nest-themed fallback seed for '%s': %s",
+                             meta.get('name', ''), uri)
+                return uri
+        except Exception:
+            logger.debug("Error looking up nest seed, using default fallback")
         logger.debug("Using fallback seed (no valid track seeds found)")
         return "spotify:track:3utq2FgD1pkmIoaWfjXWAU"
 
@@ -339,11 +363,49 @@ class DB(object):
         return info
 
     def _get_strategy_weights(self):
-        """Return strategy weights dict from config or default."""
+        """Return strategy weights dict from config or default.
+
+        If this nest has a genre hint (from its themed name), adds +20
+        flat bonus to the 'genre' weight to bias towards genre-matching.
+        Throwback strategy is disabled for non-main nests (play history
+        is only meaningful for the main queue).
+        """
         weights = getattr(CONF, 'BENDER_STRATEGY_WEIGHTS', None)
         if weights and isinstance(weights, dict):
-            return dict(weights)
-        return dict(self.STRATEGY_WEIGHTS_DEFAULT)
+            weights = dict(weights)
+        else:
+            weights = dict(self.STRATEGY_WEIGHTS_DEFAULT)
+
+        # Throwback relies on play history which only exists for main
+        if self.nest_id != "main":
+            weights.pop('throwback', None)
+
+        hint = self._get_nest_genre_hint()
+        if hint and 'genre' in weights:
+            weights['genre'] += 20
+
+        return weights
+
+    def _get_nest_genre_hint(self):
+        """Return the genre keyword for this nest, or None.
+
+        Priority: explicit genre_hint from metadata (user-supplied) →
+        name-based NEST_SEED_MAP lookup → None.
+        Fresh lookup every call (single hget) to handle renames.
+        """
+        from nests import NestManager, get_nest_seed_info
+        try:
+            meta = NestManager(redis_client=self._r).get_nest(self.nest_id)
+            if meta:
+                # Prefer explicit genre_hint from nest creation
+                explicit = meta.get('genre_hint')
+                if explicit:
+                    return explicit
+                _, genre = get_nest_seed_info(meta.get('name', ''))
+                return genre
+        except Exception:
+            pass
+        return None
 
     def _select_strategy_excluding(self, exclude_set):
         """Weighted random pick from strategies, filtering out exclude_set.
@@ -377,6 +439,8 @@ class DB(object):
         limit = self._bender_fetch_limit
 
         if strategy == 'throwback':
+            if self.nest_id != "main":
+                return 0
             return self._fill_throwback_cache()
         elif strategy == 'genre':
             uris = self._fetch_genre_tracks(seed_info, market, limit)
@@ -414,10 +478,21 @@ class DB(object):
         return len(filtered)
 
     def _fetch_genre_tracks(self, seed_info, market, limit=20):
-        """Search Spotify by one of the seed artist's genres."""
+        """Search Spotify by one of the seed artist's genres.
+
+        If this nest has a genre hint, it's added to the candidate pool
+        (twice for ~50% selection weight alongside 2 artist genres).
+        This also allows genre strategy to work when the seed artist has no genres.
+        """
         if not seed_info:
             return []
-        genres = seed_info.get('genres', [])
+        genres = list(seed_info.get('genres', []))
+
+        # Inject nest genre hint into candidate pool
+        hint = self._get_nest_genre_hint()
+        if hint:
+            genres.extend([hint, hint])  # Double weight for nest genre
+
         if not genres:
             return []
         genre = random.choice(genres)
@@ -627,6 +702,8 @@ class DB(object):
     def ensure_fill_songs(self):
         """Lazy pre-warm: ensure at least one strategy cache has tracks."""
         for strategy in self._STRATEGY_CACHE_KEYS:
+            if strategy == 'throwback' and self.nest_id != "main":
+                continue
             cache_key = self._cache_key(strategy)
             if self._r.llen(cache_key) > 0:
                 return  # At least one cache is warm
@@ -686,16 +763,8 @@ class DB(object):
             # If filtered, fall through to normal rotation below
 
         if is_spotify_rate_limited():
-            # Throwback doesn't need Spotify API, try it directly
-            track = self._r.lpop(self._key('BENDER|cache:throwback'))
-            if track:
-                user = self._r.hget(self._key('BENDER|throwback-users'), track) or 'the@echonest.com'
-                self._r.hdel(self._key('BENDER|throwback-users'), track)
-                self._r.set(self._key('MISC|last-bender-track'), track)
-                logger.info("get_fill_song: strategy=throwback, track=%s, user=%s", track, user)
-                return user, track
-            # Try to fill throwback cache
-            if self._fill_throwback_cache() > 0:
+            # Throwback doesn't need Spotify API — but only for main nest
+            if self.nest_id == "main":
                 track = self._r.lpop(self._key('BENDER|cache:throwback'))
                 if track:
                     user = self._r.hget(self._key('BENDER|throwback-users'), track) or 'the@echonest.com'
@@ -703,6 +772,15 @@ class DB(object):
                     self._r.set(self._key('MISC|last-bender-track'), track)
                     logger.info("get_fill_song: strategy=throwback, track=%s, user=%s", track, user)
                     return user, track
+                # Try to fill throwback cache
+                if self._fill_throwback_cache() > 0:
+                    track = self._r.lpop(self._key('BENDER|cache:throwback'))
+                    if track:
+                        user = self._r.hget(self._key('BENDER|throwback-users'), track) or 'the@echonest.com'
+                        self._r.hdel(self._key('BENDER|throwback-users'), track)
+                        self._r.set(self._key('MISC|last-bender-track'), track)
+                        logger.info("get_fill_song: strategy=throwback, track=%s, user=%s", track, user)
+                        return user, track
             return None, None
 
         seed_info = self._get_seed_info()

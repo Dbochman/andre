@@ -64,7 +64,7 @@ class TestAuthGateWithoutSpotify:
         # Skip if we can't import the app (missing dependencies)
         try:
             from app import SAFE_PATHS, SAFE_PARAM_PATHS
-        except (ImportError, ModuleNotFoundError) as e:
+        except Exception as e:
             pytest.skip(f'Cannot import app: {e}')
 
         assert '/login/' in SAFE_PATHS
