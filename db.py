@@ -9,7 +9,6 @@ import uuid
 import logging
 import pickle
 import base64
-import smtplib
 import hashlib
 import os
 import traceback
@@ -1836,31 +1835,6 @@ class DB(object):
         hashed = generate_password_hash(password)
         self._r.hset(self._key('MISC|guest-login-expire'), email, pickle_dump_b64(expires))
         self._r.hset(self._key('MISC|guest-login'), email, hashed)
-
-    def send_email(self, target, subject, body):
-        if isinstance(target, str):
-            target = [target]
-        msg = "To: {0}\nFrom: {1}\nSubject: {2}\n\n{3}"
-        msg = msg.format(', '.join(target), CONF.SMTP_FROM,
-                            subject, body)
-        smtp = smtplib.SMTP(CONF.SMTP_HOST)
-        smtp.login(CONF.SMTP_USER, CONF.SMTP_PASS)
-        smtp.sendmail(CONF.SMTP_FROM, target, msg)
-
-
-    def add_login(self, email, expires):
-        email = email.lower()
-        #Weak passwords, but humans will remember 'em.
-        words = [x.strip() for x in open('/usr/share/dict/words').readlines()
-                    if 4 < len(x) < 8]
-        random.shuffle(words)
-        passwd = ''.join(x.title() for x in words[:2])
-        self._r.hset(self._key('MISC|guest-login-expire'), email, pickle_dump_b64(expires))
-        self._r.hset(self._key('MISC|guest-login'), email, passwd)
-        self.send_email(email, "Welcome to EchoNest!",
-                        render_template('welcome_email.txt',
-                            expires=expires, email=email,
-                            passwd=passwd))
 
     def _airhorners_for_song_log(self, id):
         found_airhorns = []

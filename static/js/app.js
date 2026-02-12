@@ -1442,8 +1442,8 @@ function make_player(ev){
         last_spotify_track = null;
         last_synced_spotify_track = null;
         $('#ytapiplayer').css('z-index', 900);
-        // Show sync audio buttons again when disconnected
-        $('#sync-audio-btn').show();
+        // Restore sync audio button text when disconnected
+        $('#sync-audio-btn').text('Sync Audio');
         $('#airhorn-sync-audio').show();
         return;
     }
@@ -1465,8 +1465,8 @@ function make_player(ev){
     socket.emit('request_volume');
 
     $('#make-player').text('disconnect audio');
-    // Hide sync audio buttons when connected
-    $('#sync-audio-btn').hide();
+    // Update echonest tab sync button, hide airhorn tab one
+    $('#sync-audio-btn').text('Disconnect Audio');
     $('#airhorn-sync-audio').hide();
 }
 

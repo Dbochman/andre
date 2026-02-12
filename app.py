@@ -734,7 +734,7 @@ def inject_config():
     return dict(CONF=CONF)
 
 SAFE_PATHS = ('/login/', '/login/google', '/logout/', '/playing/', '/queue/', '/volume/',
-              '/guest', '/guest/', '/signup/', '/signup', '/api/jammit/', '/health',
+              '/signup/', '/signup', '/api/jammit/', '/health',
               '/authentication/callback', '/token', '/last/', '/airhorns/', '/z/')
 SAFE_PARAM_PATHS = ('/history', '/user_history', '/user_jam_history', '/search/v2', '/youtube/lookup', '/youtube/playlist', '/add_song',
     '/blast_airhorn', '/airhorn_list', '/queue/', '/jam', '/api/')
@@ -862,9 +862,9 @@ def auth_callback():
         email_allowed = any(email.endswith('@' + domain) for domain in allowed_domains)
         if not email_allowed:
             logger.warning('Login rejected for email: %s (allowed domains: %s)', email, allowed_domains)
+            failure_message = 'Sorry, {} is not on the guest list. Ask the host to add your domain.'.format(email)
             return make_response(
-                render_template('guest_login.html', failure=True,
-                                failure_message='Sorry, {} is not on the guest list. Ask the host to add your domain.'.format(email)),
+                render_template('login.html', failure=True, failure_message=failure_message),
                 403)
 
     for k1, k2 in (('email', 'email',), ('fullname', 'name'),):
@@ -988,20 +988,6 @@ def jam():
     return resp
 
 
-@app.route('/guest/', methods=['GET', 'POST'])
-def guest():
-    if request.method == 'GET':
-        return render_template('guest_login.html', failure=False)
-    print(request.values)
-    email = d.try_login(request.values.get('email', ''),
-                        request.values.get('passwd', ''))
-    if not email:
-        return render_template('guest_login.html', failure=True)
-    session['email'] = email
-    session['fullname'] = 'Guest'
-    return redirect('/')
-
-
 @app.route('/signup/', methods=['GET', 'POST'])
 def signup():
     if request.method == 'GET':
@@ -1047,20 +1033,6 @@ def signup():
     session['fullname'] = 'Guest'
     return redirect('/')
 
-
-@app.route('/add_guest/', methods=['GET', 'POST'])
-def add_guest():
-    if not session['email'].endswith('@spotify.com'):
-        return redirect('/')
-    if request.method == 'GET':
-        return render_template('add_guest.html')
-    email = request.values['email']
-    target = (datetime.datetime.now() +
-              datetime.timedelta(days=int(request.values['days'])))
-    msg = 'Adding {0} as a guest for {1} until {2}'
-    msg = msg.format(email, session['email'], target)
-    d.add_login(email, target)
-    return msg
 
 
 # , content_type="application/javascript")

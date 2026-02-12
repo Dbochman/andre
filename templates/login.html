@@ -51,13 +51,18 @@
             <h1>EchoNest</h1>
             <p class="subtitle">Collaborative music queue</p>
 
+            {% if failure %}
+            <div class="alert alert-danger" role="alert">
+                {{ failure_message or 'Login failed. Please try again or contact the host.' }}
+            </div>
+            {% endif %}
+
             <a href="/login/google" class="btn-google">Sign in with Google</a>
 
             <div class="divider"><span>or</span></div>
 
             <div class="guest-links">
-                <a href="/signup/">Create a guest account</a>
-                <a href="/guest/">Already have a guest account? Sign in</a>
+                <a href="/signup/">Sign up without Google</a>
             </div>
         </div>
     </body>
