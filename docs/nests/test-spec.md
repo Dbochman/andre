@@ -2,7 +2,7 @@
 
 > **SUPERSEDED:** This spec was written before Codex generated the actual tests.
 > The canonical test file is `test/test_nests.py` — a single file with xfail
-> contract tests (no fakeredis, no multi-file split). See `docs/NESTS_TASKS.md`
+> contract tests (no fakeredis, no multi-file split). See `docs/nests/tasks.md`
 > for the authoritative test class → task mapping. This file is kept as a
 > reference for test intent but should NOT be used to guide implementation.
 
@@ -12,11 +12,11 @@ Kept as a reference for test intent and coverage ideas.
 ## What Actually Exists
 
 - **Canonical tests:** `test/test_nests.py` — single file, xfail contract tests, Flask test client
-- **Task mapping:** `docs/NESTS_TASKS.md` — maps test classes to implementation tasks
+- **Task mapping:** `docs/nests/tasks.md` — maps test classes to implementation tasks
 - **No fakeredis** in current tests (may be added during implementation for DB-level unit tests)
 
 **Stop reading here.** Everything below is archived original design that was NOT implemented.
-Use `test/test_nests.py` and `docs/NESTS_TASKS.md` as your sources of truth.
+Use `test/test_nests.py` and `docs/nests/tasks.md` as your sources of truth.
 
 ---
 

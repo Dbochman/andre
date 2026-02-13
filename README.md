@@ -32,7 +32,7 @@ EchoNest is a **shared queue, individual playback** system:
    - Make sure the Spotify app is open on your device before connecting.
 3. That's it -- you're in the queue. Add songs, vote, and listen together.
 
-For the full walkthrough (Bender auto-fill, preview tracks, Nests, airhorns, and more), see the **[Getting Started guide](docs/GETTING_STARTED.md)**.
+For the full walkthrough (Bender auto-fill, preview tracks, Nests, airhorns, and more), see the **[Getting Started guide](docs/getting-started.md)**.
 
 ## Quick Start (Docker)
 
@@ -130,7 +130,7 @@ make test-all
 
 ## Deployment
 
-See [docs/CLOUD_HOSTING_PLAN.md](docs/CLOUD_HOSTING_PLAN.md) for production deployment instructions.
+See [docs/cloud-hosting-plan.md](docs/cloud-hosting-plan.md) for production deployment instructions.
 
 The live instance runs on a $6/month DigitalOcean droplet with:
 - Caddy reverse proxy (auto HTTPS)
@@ -176,7 +176,7 @@ After Spotify acquired The Echo Nest in 2014, Prosecco was forked and rebranded 
 This repository represents the EchoNest branch, which was resurrected from a 2018 snapshot and modernized to Python 3 in 2026. The historical play logs from 2017-2018 power the "Throwback" feature, which suggests songs that were played on the same day of the week years ago.
 
 ## Changelog
-See `docs/CHANGELOG.md` for the resurrection change summary and testing notes.
+See `docs/changelog.md` for the resurrection change summary and testing notes.
 
 ## License
 

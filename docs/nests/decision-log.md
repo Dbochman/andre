@@ -3,7 +3,7 @@
 Decisions made during overnight implementation of the Nests MVP (Phases 1-3).
 Each entry documents what was decided, why, and any alternatives considered.
 
-For async handoffs, use `docs/NESTS_HANDOFF_TEMPLATE.md`.
+For async handoffs, use `docs/nests/ (handoff template removed)`.
 
 ---
 
@@ -58,7 +58,7 @@ For async handoffs, use `docs/NESTS_HANDOFF_TEMPLATE.md`.
 
 ## D007: POST /api/nests returns 200, not 201
 **Date:** 2026-02-11 (pre-implementation review)
-**Context:** `docs/NESTS_TEST_SPEC.md` specified 201 for create, but Codex's actual tests (`test/test_nests.py:52`) assert 200.
+**Context:** `docs/nests/test-spec.md` specified 201 for create, but Codex's actual tests (`test/test_nests.py:52`) assert 200.
 **Decision:** Follow the actual tests — return 200 with nest metadata.
 **Rationale:** The Codex contract tests are the source of truth for the overnight run. The test spec is superseded. 200 is acceptable for create endpoints that return the created resource (Flask convention), and changing the tests would be more disruptive.
 
@@ -66,7 +66,7 @@ For async handoffs, use `docs/NESTS_HANDOFF_TEMPLATE.md`.
 
 ## D008: Single test file with xfail contracts (not multi-file unit tests)
 **Date:** 2026-02-11 (pre-implementation review)
-**Context:** `docs/NESTS_TEST_SPEC.md` proposed 6+ test files with fakeredis injection. Codex produced a single `test/test_nests.py` with Flask-client contract tests.
+**Context:** `docs/nests/test-spec.md` proposed 6+ test files with fakeredis injection. Codex produced a single `test/test_nests.py` with Flask-client contract tests.
 **Decision:** Use Codex's approach as the primary test suite. Test spec marked as superseded reference. Implementation may add fakeredis-based unit tests if needed, but the overnight run targets passing the xfail contract tests.
 **Rationale:** Contract tests are what Codex wrote and what the task breakdown maps to. Adding a parallel test suite would be confusing and time-consuming.
 

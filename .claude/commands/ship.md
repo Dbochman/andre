@@ -7,7 +7,7 @@ Commit changes, update changelog, and deploy to production.
 1. **Check git status** - Review staged and unstaged changes
 2. **Stage relevant files** - Add modified files (exclude .cache, .env, local_config.yaml)
 3. **Create commit** - With descriptive message following repo conventions
-4. **Update changelog** - Add entry to `docs/CHANGELOG.md` under today's date
+4. **Update changelog** - Add entry to `docs/changelog.md` under today's date
 5. **Push to origin** - Push commit to main branch
 6. **Deploy to production** - Sync code and rebuild containers
 
@@ -45,7 +45,7 @@ Follow the existing repo convention:
 
 ## Changelog Format
 
-Add entries under `## YYYY-MM-DD` section in `docs/CHANGELOG.md`:
+Add entries under `## YYYY-MM-DD` section in `docs/changelog.md`:
 
 ```markdown
 ### Bug Fixes

@@ -481,7 +481,7 @@ NEST:{id}|FREEHORN_{userid}            → set of free airhorn eligible songs
 
 ## Implementation Notes
 
-### Decisions Made (see `docs/NESTS_DECISION_LOG.md` for full details)
+### Decisions Made (see `docs/nests/decision-log.md` for full details)
 
 | # | Decision | Rationale |
 |---|----------|-----------|

@@ -105,10 +105,10 @@ Server-side Spotify playback control via REST API. The `_get_spotify_client()` h
 
 ## Nests Feature (In Progress)
 
-**Plan:** See `docs/NESTS_PLAN.md` for full spec.
-**Decision Log:** See `docs/NESTS_DECISION_LOG.md` — append every judgment call here.
-**API Errors:** See `docs/NESTS_API_ERRORS.md` — canonical error response shapes.
-**Test Spec:** See `docs/NESTS_TEST_SPEC.md` (superseded — kept as reference). Canonical tests: `test/test_nests.py`.
+**Plan:** See `docs/nests/plan.md` for full spec.
+**Decision Log:** See `docs/nests/decision-log.md` — append every judgment call here.
+**API Errors:** See `docs/nests/api-errors.md` — canonical error response shapes.
+**Test Spec:** See `docs/nests/test-spec.md` (superseded — kept as reference). Canonical tests: `test/test_nests.py`.
 **Branch:** `feature/nests`
 
 ### What Are Nests?
@@ -140,7 +140,7 @@ NEST:{nest_id}|MISC|now-playing
 NEST:{nest_id}|MISC|priority-queue
 NEST:{nest_id}|QUEUE|{song_id}
 NEST:{nest_id}|MEMBERS
-...etc (see docs/NESTS_PLAN.md for complete reference)
+...etc (see docs/nests/plan.md for complete reference)
 ```
 
 **Global keys (NOT nest-scoped):**
@@ -169,7 +169,7 @@ Tests are xfail contract tests using Flask test client (no fakeredis). Implement
 
 When a judgment call is needed during implementation:
 1. Pick the simplest option that aligns with the plan
-2. Append the decision to `docs/NESTS_DECISION_LOG.md` with rationale
+2. Append the decision to `docs/nests/decision-log.md` with rationale
 3. Continue implementing
 
 ## Known Limitations

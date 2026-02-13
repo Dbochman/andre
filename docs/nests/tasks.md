@@ -212,7 +212,7 @@ These are the test classes that should flip from `xfail` to passing, grouped by 
 - `DELETE /api/nests/<code>` — delete nest (creator only)
 - **Auth:** These routes use session auth (standard `before_request` gate) OR `@require_api_token` for API clients. Do NOT add `/api/nests` to `SAFE_PARAM_PATHS` — that would bypass session auth and make them public
 - Return proper JSON responses with status codes
-- Use error shapes from `docs/NESTS_API_ERRORS.md`
+- Use error shapes from `docs/nests/api-errors.md`
 **Commit:** `feat(nests): add REST API routes for nest CRUD`
 **Verify:** `SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest test/test_nests.py::TestNestsAPI -v`
 - `test_create_nest_returns_code` — POST /api/nests → 200 with `code` (5 chars)
@@ -353,7 +353,7 @@ These are the test classes that should flip from `xfail` to passing, grouped by 
 - "Join a Nest" input: on submit (Enter or button), validate 5-char code → navigate to `/nest/{code}` (server returns 404 if invalid)
 - "Share Nest" button: copy `echone.st/{code}` (or `window.location.origin + /nest/{code}` if `ECHONEST_DOMAIN` not configured) to clipboard via `navigator.clipboard.writeText()`
 - "Back to Main Nest" link: navigate to `/`
-- Error handling: show inline error if API returns error (use shapes from `docs/NESTS_API_ERRORS.md`)
+- Error handling: show inline error if API returns error (use shapes from `docs/nests/api-errors.md`)
 **Commit:** `feat(nests): wire nest bar create/join/share interactions`
 **Acceptance criteria:**
 - "Build a Nest" calls API, gets code, navigates to new nest

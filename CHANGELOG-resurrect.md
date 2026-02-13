@@ -1,6 +1,6 @@
 # Andre Resurrection - Change Summary
 
-Note: The current changelog now lives at `docs/CHANGELOG.md`. This file is retained for historical context and now mirrors the new location.
+Note: The current changelog now lives at `docs/changelog.md`. This file is retained for historical context and now mirrors the new location.
 
 This document captures the changes made to resurrect Andre from the original Python 2 codebase to a working Python 3 application.
 
