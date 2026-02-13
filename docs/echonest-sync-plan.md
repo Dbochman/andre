@@ -86,27 +86,47 @@ echonest-sync --server https://echone.st --token YOUR_TOKEN
 
 **Core loop**:
 ```python
-import sseclient, subprocess, platform, json, time
+import requests, sseclient, subprocess, platform, json, os, time
+from datetime import datetime
+
+DRIFT_THRESHOLD = 3  # seconds before correcting position
 
 def sync_loop(server_url, token):
     headers = {'Authorization': f'Bearer {token}'}
-    response = requests.get(f'{server_url}/api/events',
-                           headers=headers, stream=True)
-    client = sseclient.SSEClient(response)
+    while True:
+        try:
+            response = requests.get(f'{server_url}/api/events',
+                                   headers=headers, stream=True, timeout=30)
+            client = sseclient.SSEClient(response)
 
-    current_track = None
-    for event in client.events():
-        if event.event == 'now_playing':
-            data = json.loads(event.data)
-            track_uri = f"spotify:track:{data['trackid']}"
-            if track_uri != current_track:
-                play_track(track_uri)
-                current_track = track_uri
-                seek_to_position(data)
+            current_track = None
+            for event in client.events():
+                if event.event == 'now_playing':
+                    data = json.loads(event.data)
+                    track_uri = f"spotify:track:{data['trackid']}"
+                    if track_uri != current_track:
+                        play_track(track_uri)
+                        current_track = track_uri
+                        # Calculate elapsed time on server, seek to match
+                        elapsed = calculate_elapsed(data)
+                        if elapsed > 1:
+                            seek_to(elapsed)
 
-        elif event.event == 'player_position':
-            data = json.loads(event.data)
-            correct_drift(data)
+                elif event.event == 'player_position':
+                    data = json.loads(event.data)
+                    correct_drift(data)
+
+        except (requests.ConnectionError, requests.Timeout):
+            time.sleep(5)  # backoff and reconnect
+
+def calculate_elapsed(data):
+    """Calculate how many seconds into the track the server is."""
+    starttime = data.get('starttime', 0)
+    server_now = data.get('now', '')
+    if server_now and starttime:
+        now_ts = datetime.fromisoformat(server_now).timestamp()
+        return max(0, now_ts - starttime)
+    return 0
 
 def play_track(uri):
     system = platform.system()
@@ -115,10 +135,15 @@ def play_track(uri):
             f'tell application "Spotify" to play track "{uri}"'])
     elif system == 'Linux':
         subprocess.run(['playerctl', '--player=spotify', 'open', uri])
-    else:
-        subprocess.run(['start', uri], shell=True)
+    else:  # Windows
+        os.startfile(uri)
 
 def seek_to(seconds):
+    """Seek to an absolute position in seconds.
+    macOS: AppleScript `player position` (seconds).
+    Linux: playerctl >= 2.0 `position` (absolute seconds).
+    """
+    seconds = int(seconds)
     system = platform.system()
     if system == 'Darwin':
         subprocess.run(['osascript', '-e',
@@ -126,12 +151,23 @@ def seek_to(seconds):
     elif system == 'Linux':
         subprocess.run(['playerctl', '--player=spotify', 'position',
             str(seconds)])
+
+def correct_drift(data):
+    """Check local position against server and correct if drift exceeds threshold."""
+    server_pos = data.get('pos', 0)
+    # Compare with local Spotify position; seek if drift > DRIFT_THRESHOLD
+    # (platform-specific position query omitted for brevity)
+    pass
 ```
 
+**SSE reconnection**: The sync loop wraps the SSE subscription in a `while True` with a 5-second backoff on connection errors. This handles transient network blips, server restarts, and deploy-triggered disconnects without the agent silently dying.
+
+**playerctl version note**: Absolute position seeking (`playerctl position N`) requires playerctl >= 2.0. Older versions only support relative seeks. Recommend `playerctl --version` check on startup.
+
 **Position sync strategy**:
-- `now_playing` event includes `starttime` (when track started on server) and `now` (server timestamp)
-- Calculate: `server_elapsed = now - starttime`
-- Seek to `server_elapsed + estimated_network_delay`
+- `now_playing` event includes `starttime` (when track started on server) and `now` (server ISO timestamp)
+- Calculate: `elapsed = now_timestamp - starttime`
+- Seek to `elapsed` seconds after starting the track
 - `player_position` events provide periodic position updates for drift correction (correct if > 3 seconds off)
 
 **Pause/unpause handling**:
