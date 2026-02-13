@@ -124,6 +124,8 @@ def calculate_elapsed(data):
     starttime = data.get('starttime', 0)
     server_now = data.get('now', '')
     if server_now and starttime:
+        # Handle trailing Z (Python < 3.11 compat) and ensure UTC
+        server_now = server_now.replace('Z', '+00:00')
         now_ts = datetime.fromisoformat(server_now).timestamp()
         return max(0, now_ts - starttime)
     return 0
