@@ -32,7 +32,7 @@ EchoNest is a **shared queue, individual playback** system:
    - Make sure the Spotify app is open on your device before connecting.
 3. That's it -- you're in the queue. Add songs, vote, and listen together.
 
-For the full walkthrough (Bender auto-fill, preview tracks, Nests, airhorns, and more), see the **[Getting Started guide](docs/getting-started.md)**.
+For the full walkthrough (Bender auto-fill, preview tracks, Nests, airhorns, and more), see the **[Getting Started guide](docs/GETTING_STARTED.md)**.
 
 ## Quick Start (Docker)
 
