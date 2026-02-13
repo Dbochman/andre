@@ -204,6 +204,56 @@ When a judgment call is needed during implementation:
 2. Append the decision to `docs/nests/decision-log.md` with rationale
 3. Continue implementing
 
+## echonest-sync (Desktop Sync Client)
+
+A standalone Python package in `echonest-sync/` that syncs local Spotify playback to an EchoNest server. Two entry points: `echonest-sync` (CLI) and `echonest-sync-app` (desktop tray app with onboarding).
+
+### Commands
+
+```bash
+# Install in dev mode (macOS)
+cd echonest-sync && pip install -e ".[mac]"
+
+# Run CLI
+echonest-sync --server https://echone.st --token YOUR_TOKEN
+
+# Run desktop app (tray icon + onboarding)
+echonest-sync-app
+
+# Run tests
+cd echonest-sync && SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest tests/ -v
+```
+
+### Architecture
+
+- **`sync.py`** — Core sync engine: SSE listener, plays/seeks/pauses local Spotify via AppleScript (macOS), playerctl (Linux), or os.startfile (Windows). Override detection pauses sync when user manually changes tracks (15s grace period after track changes).
+- **`app.py`** — Desktop launcher: checks keyring → spawns onboarding subprocess if no token → starts engine thread → starts tray on main thread.
+- **`tray_mac.py`** — rumps menu bar app. Polls IPC events every 1s. Icon states: green (connected), yellow (disconnected), grey (paused/snoozed/override).
+- **`tray_win.py`** — pystray equivalent for Windows.
+- **`onboarding.py`** — tkinter dialog (runs as subprocess to avoid event loop conflicts). Invite code → `POST /api/sync-token` → stores token in keyring + server URL in config.
+- **`config.py`** — OS-appropriate config dirs, keyring integration (macOS Keychain / Windows DPAPI), `save_config()` strips secrets before writing to disk.
+- **`ipc.py`** — Thread-safe command/event queues between tray GUI and sync engine.
+- **`autostart.py`** — LaunchAgent plist (macOS) / Startup folder shortcut (Windows).
+
+### Server-Side Endpoint
+
+`POST /api/sync-token` in `app.py` — exchanges invite code for API token. Rate limited (10 attempts/IP/hour via Redis). Config: `SYNC_INVITE_CODES` list in `local_config.yaml`.
+
+### Key Gotchas
+
+- Server `trackid` field is already a full Spotify URI (`spotify:track:...`) — don't double-prefix.
+- Server `starttime` can be stale (hours old) — always clamp elapsed to track `duration` before seeking.
+- macOS port 5000 is used by AirPlay Receiver — use port 5001 for local dev.
+- rumps adds a default Quit menu item — use `quit_button=None` to provide your own.
+- `template=True` in rumps silhouettes colored icons — use `template=False` for the nest artwork.
+- Tests must mock `get_token`/`get_config_dir` to isolate from real keyring, or CLI tests will connect to live servers.
+
+### Packaging
+
+- `build/macos/build_app.py` — PyInstaller `.app` bundle (universal2, `icon.icns`)
+- `build/windows/build_exe.py` — PyInstaller `.exe` (onefile, `icon.ico`)
+- `.github/workflows/echonest-sync.yml` — CI test matrix + build/release on `sync-v*` tags
+
 ## Known Limitations
 
 1. Spotify recommendations API deprecated - workaround uses top tracks + album tracks
