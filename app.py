@@ -1599,6 +1599,24 @@ def api_playing():
     return jsonify(**_serialize_playing())
 
 
+@app.route('/api/stats', methods=['GET'])
+@require_api_token
+def api_stats():
+    """Concise JSON analytics snapshot for agents / API consumers."""
+    days = min(int(request.args.get('days', 7)), 90)
+    today_stats = analytics.get_daily_stats(d._r)
+    dau_today = analytics.get_daily_active_users(d._r)
+    dau_trend = analytics.get_dau_trend(d._r, days=days)
+    known_users = analytics.get_known_user_count(d._r)
+
+    return jsonify(
+        today=today_stats,
+        dau=len(dau_today),
+        dau_trend=[{'date': date, 'users': count} for date, count in dau_trend],
+        known_users=known_users,
+    )
+
+
 @app.route('/api/events', methods=['GET'])
 @require_api_token
 def api_events():
