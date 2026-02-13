@@ -118,15 +118,13 @@ class LinuxPlayer(SpotifyPlayer):
         self._playerctl("play")
 
     def seek_to(self, seconds):
-        # playerctl position takes microseconds for absolute seek
-        self._playerctl("position", str(int(seconds * 1_000_000)))
+        self._playerctl("position", str(seconds))
 
     def get_position(self):
         result = self._playerctl("position")
         if result is not None:
             try:
-                # playerctl returns position in microseconds
-                return float(result) / 1_000_000
+                return float(result)
             except ValueError:
                 pass
         return None
