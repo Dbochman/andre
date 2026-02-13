@@ -1808,6 +1808,43 @@ def api_stats():
     )
 
 
+@app.route('/api/sync-token', methods=['POST'])
+def api_sync_token():
+    """Exchange an invite code for an API token (echonest-sync desktop app).
+
+    No @require_api_token — the invite code IS the authentication.
+    Rate limited to 10 attempts per IP per hour.
+    """
+    # Rate limit: 10 attempts per IP per hour
+    ip = request.remote_addr or 'unknown'
+    rate_key = f'SYNC_TOKEN_RATE|{ip}'
+    attempts = d._r.incr(rate_key)
+    if attempts == 1:
+        d._r.expire(rate_key, 3600)
+    if attempts > 10:
+        return jsonify(error='rate_limited'), 429
+
+    body = request.get_json(silent=True) or {}
+    invite_code = (body.get('invite_code') or '').strip()
+
+    if not invite_code:
+        return jsonify(error='missing_code'), 400
+
+    valid_codes = CONF.SYNC_INVITE_CODES or []
+    if invite_code not in valid_codes:
+        return jsonify(error='invalid_code'), 401
+
+    configured_token = CONF.ECHONEST_API_TOKEN
+    if not configured_token:
+        return jsonify(error='server_not_configured'), 503
+
+    hostname = CONF.HOSTNAME or request.host
+    scheme = 'https' if request.is_secure else 'https'  # always https in prod
+    server_url = f'{scheme}://{hostname}'
+
+    return jsonify(token=configured_token, server=server_url)
+
+
 @app.route('/api/events', methods=['GET'])
 @require_api_token
 def api_events():

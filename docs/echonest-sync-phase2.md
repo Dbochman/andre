@@ -80,10 +80,25 @@ tkinter window (~300x200px):
 Flow:
 1. Text field prefilled with `futureofmusic` (editable)
 2. On "Connect": POST to `/api/sync-token`
-3. On success: store token via keyring (see Security), show "Connected!", close after 2s
-4. On failure: show error inline ("Invalid code" / "Server unreachable"), stay open
+3. On success: store token via keyring (see Security) **and persist the `server` URL from the response to `config.yaml`** via `save_config()`, show "Connected!", close after 2s
+4. On failure: show error inline (see status label lifecycle below), stay open
 5. Detect Spotify: if not running, show "Spotify not detected — start it for audio sync" (non-blocking warning, not a gate)
 6. On success: exit process with code 0; parent process reads token from keyring, starts tray app
+
+### Status Label Lifecycle
+
+The status label updates in-place within the dialog to reflect the current state:
+
+| State | Text | Color | Trigger |
+|---|---|---|---|
+| Initial | `"Ready"` | default | Dialog opens |
+| Connecting | `"Connecting..."` | default | Connect clicked (button disabled) |
+| Success | `"Connected!"` | green | 200 response; auto-close after 2s |
+| Invalid code | `"Invalid invite code"` | red | 401 response; button re-enabled |
+| Rate limited | `"Too many attempts. Try again later."` | red | 429 response; button re-enabled |
+| Unreachable | `"Could not reach server"` | red | Connection error; button re-enabled |
+| Server error | `"Server error (NNN)"` | red | Other HTTP errors; button re-enabled |
+| Spotify warning | `"Start Spotify for audio sync"` | orange | Non-blocking; Spotify not detected |
 
 Shown on first launch (no config found) or after "Forget Server".
 

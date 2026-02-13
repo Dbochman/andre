@@ -19,16 +19,104 @@ def _elapsed_seconds(starttime_str, now_str):
 
 
 class SyncAgent:
-    def __init__(self, server, token, player, drift_threshold=3):
+    def __init__(self, server, token, player, drift_threshold=3, channel=None):
         self.server = server.rstrip("/")
         self.token = token
         self.player = player
         self.drift_threshold = drift_threshold
+        self.channel = channel  # Optional SyncChannel for GUI IPC
 
         # State
         self.current_track_uri = None
         self.current_src = None
         self.paused = False
+
+        # IPC state (only active when channel is not None)
+        self._sync_paused = False
+        self._snoozed_until = 0
+        self._override_count = 0
+        self._last_override_check = 0
+        self._running = True
+
+    # ------------------------------------------------------------------
+    # IPC helpers (no-ops when channel is None)
+    # ------------------------------------------------------------------
+
+    def _emit(self, event_type, **kwargs):
+        if self.channel:
+            self.channel.emit(event_type, **kwargs)
+
+    def _process_commands(self):
+        """Drain and handle all pending GUI commands."""
+        if not self.channel:
+            return
+        for cmd in self.channel.get_commands():
+            if cmd.type == "pause":
+                self._sync_paused = True
+                self._emit("status_changed", status="paused")
+                log.info("Sync paused by user")
+            elif cmd.type == "resume":
+                self._sync_paused = False
+                self._snoozed_until = 0
+                self._override_count = 0
+                self._emit("status_changed", status="syncing")
+                log.info("Sync resumed by user")
+                self._initial_sync()
+            elif cmd.type == "snooze":
+                duration = cmd.kwargs.get("duration", 900)
+                self._snoozed_until = time.time() + duration
+                self._sync_paused = True
+                self._emit("status_changed", status="snoozed",
+                           until=self._snoozed_until)
+                log.info("Sync snoozed for %ds", duration)
+            elif cmd.type == "quit":
+                self._running = False
+                log.info("Quit requested")
+
+    def _is_sync_active(self):
+        """Check if sync should control the player right now."""
+        # Check snooze expiry
+        if self._snoozed_until and time.time() >= self._snoozed_until:
+            self._snoozed_until = 0
+            self._sync_paused = False
+            self._emit("status_changed", status="syncing")
+            log.info("Snooze expired, resuming sync")
+            self._initial_sync()
+
+        return not self._sync_paused
+
+    def _check_user_override(self):
+        """Detect if user manually changed Spotify playback."""
+        if not self.channel or not self.current_track_uri:
+            return
+
+        now = time.time()
+        if now - self._last_override_check < 5:
+            return
+        self._last_override_check = now
+
+        try:
+            local_track = self.player.get_current_track()
+        except Exception:
+            return
+
+        if local_track is None:
+            # Player can't report (e.g. WindowsPlayer) — skip detection
+            return
+
+        if local_track != self.current_track_uri:
+            self._override_count += 1
+            if self._override_count >= 2:  # 10s of mismatch
+                self._emit("user_override", track=local_track)
+                self._sync_paused = True
+                self._emit("status_changed", status="override")
+                log.info("User override detected — auto-pausing sync")
+        else:
+            self._override_count = 0
+
+    # ------------------------------------------------------------------
+    # Core handlers
+    # ------------------------------------------------------------------
 
     def _headers(self):
         return {"Authorization": f"Bearer {self.token}"}
@@ -73,12 +161,18 @@ class SyncAgent:
 
         if uri != self.current_track_uri:
             log.info("Now playing: %s", uri)
-            self.player.play_track(uri)
+            title = data.get("title", "")
+            artist = data.get("artist", "")
+
+            if self._is_sync_active():
+                self.player.play_track(uri)
             self.current_track_uri = uri
+            self._override_count = 0  # Reset on server track change
+            self._emit("track_changed", uri=uri, title=title, artist=artist)
 
             if starttime and server_now:
                 elapsed = _elapsed_seconds(starttime, server_now)
-                if elapsed > 1:
+                if elapsed > 1 and self._is_sync_active():
                     log.debug("Seeking to %.1fs (elapsed since start)", elapsed)
                     # Small delay to let Spotify load the track
                     time.sleep(0.5)
@@ -87,13 +181,15 @@ class SyncAgent:
         # Handle pause/resume
         if is_paused and not self.paused:
             log.info("Pausing")
-            self.player.pause()
+            if self._is_sync_active():
+                self.player.pause()
             self.paused = True
         elif not is_paused and self.paused:
             log.info("Resuming")
-            self.player.resume()
+            if self._is_sync_active():
+                self.player.resume()
             self.paused = False
-            if starttime and server_now:
+            if starttime and server_now and self._is_sync_active():
                 elapsed = _elapsed_seconds(starttime, server_now)
                 self.player.seek_to(elapsed)
 
@@ -101,6 +197,9 @@ class SyncAgent:
         """Process a player_position event for drift correction."""
         src = data.get("src", "")
         if src != "spotify" or self.current_track_uri is None:
+            return
+
+        if not self._is_sync_active():
             return
 
         server_pos = data.get("pos", 0)
@@ -114,12 +213,29 @@ class SyncAgent:
                      local_pos, server_pos, drift)
             self.player.seek_to(server_pos)
 
+    # ------------------------------------------------------------------
+    # Main loop
+    # ------------------------------------------------------------------
+
     def run(self):
         """Main loop: connect to SSE, process events, reconnect on failure."""
         backoff = 5
         max_backoff = 60
 
-        while True:
+        while self._running:
+            # Spotify process watching: idle when not running
+            if not self.player.is_running():
+                self._emit("status_changed", status="waiting")
+                log.info("Spotify not running — waiting...")
+                while self._running and not self.player.is_running():
+                    self._process_commands()
+                    if not self._running:
+                        return
+                    time.sleep(15)
+                if not self._running:
+                    return
+                log.info("Spotify detected — connecting")
+
             try:
                 log.info("Connecting to %s/api/events ...", self.server)
                 resp = requests.get(
@@ -131,12 +247,21 @@ class SyncAgent:
                 resp.raise_for_status()
                 log.info("Connected — listening for events")
                 backoff = 5  # Reset on successful connect
+                self._emit("connected")
 
                 # Sync current state before waiting for events
                 self._initial_sync()
 
                 client = sseclient.SSEClient(resp)
                 for event in client.events():
+                    # Process IPC commands between events
+                    self._process_commands()
+                    if not self._running:
+                        return
+
+                    # Check for user override
+                    self._check_user_override()
+
                     try:
                         data = json.loads(event.data)
                     except (json.JSONDecodeError, TypeError):
@@ -151,13 +276,26 @@ class SyncAgent:
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code == 401:
                     log.error("Authentication failed (401) — check your token")
+                    self._emit("disconnected", reason="auth_failed")
                     return  # Don't retry auth failures
                 log.warning("HTTP error: %s", e)
+                self._emit("disconnected", reason="http_error")
             except requests.exceptions.ConnectionError as e:
                 log.warning("Connection error: %s", e)
+                self._emit("disconnected", reason="connection_error")
             except Exception as e:
                 log.warning("Unexpected error: %s", e)
+                self._emit("disconnected", reason="error")
+
+            if not self._running:
+                return
 
             log.info("Reconnecting in %ds ...", backoff)
-            time.sleep(backoff)
+            # Sleep in small increments so we can process quit commands
+            sleep_until = time.time() + backoff
+            while self._running and time.time() < sleep_until:
+                self._process_commands()
+                if not self._running:
+                    return
+                time.sleep(min(1, sleep_until - time.time()))
             backoff = min(backoff * 2, max_backoff)

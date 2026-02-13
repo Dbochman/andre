@@ -79,6 +79,7 @@ ENV_OVERRIDES = [
     'ECHONEST_SPOTIFY_EMAIL',
     'ECHONEST_ADMIN_EMAILS',
     'ECHONEST_SLACK_WEBHOOK_URL',
+    'ECHONEST_SYNC_INVITE_CODES',
     'NESTS_ENABLED',
 ]
 
@@ -110,6 +111,8 @@ def __read_conf(*files):
                 config_key = 'ADMIN_EMAILS'
             elif key == 'ECHONEST_SLACK_WEBHOOK_URL':
                 config_key = 'SLACK_WEBHOOK_URL'
+            elif key == 'ECHONEST_SYNC_INVITE_CODES':
+                config_key = 'SYNC_INVITE_CODES'
             else:
                 config_key = key
             if key == 'ALLOWED_EMAIL_DOMAINS':

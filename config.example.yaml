@@ -96,3 +96,8 @@ ECHONEST_SPOTIFY_EMAIL: ""
 # Slack Incoming Webhook URL for deploy notifications and now-playing feed
 # Create at: https://api.slack.com/messaging/webhooks
 SLACK_WEBHOOK_URL: ""
+
+# echonest-sync desktop app: invite codes for token exchange
+# Users enter one of these codes in the onboarding dialog to get an API token
+SYNC_INVITE_CODES:
+  - futureofmusic
