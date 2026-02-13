@@ -1460,13 +1460,15 @@ class DB(object):
 
         self._r.delete(self._key('BENDER|next-preview'))
         newId = self.add_spotify_song(userid, trackId)
-        # Jam the queuer and the original throwback user (if any)
-        self.jam(newId, userid)
-        if original_user and original_user != userid:
+        if original_user:
+            # Throwback: only jam the original queuer, not the person who clicked Queue
             self.add_jam(self._key('QUEUEJAM|{0}'.format(newId)), original_user)
             tb_key = self._key('QUEUEJAM_TB|{0}'.format(newId))
             self._r.sadd(tb_key, original_user)
             self._r.expire(tb_key, 24*60*60)
+        else:
+            # Non-throwback: jam the queuer as usual
+            self.jam(newId, userid)
 
     def benderfilter(self, trackId, userid):
         """Filter a Bender preview song and rotate to the next one."""
