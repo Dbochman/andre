@@ -909,6 +909,13 @@ class DB(object):
             except Exception:
                 logger.warning("ensure_queue_depth failed: %s", traceback.format_exc())
 
+            # Pre-warm Bender preview so the next playlist_update has fresh data
+            try:
+                self._peek_next_fill_song()
+            except Exception:
+                pass
+            self._msg('playlist_update')
+
             id = song['trackid']
             expire_on = int((done - self.player_now()).total_seconds())
 
