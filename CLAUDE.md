@@ -48,6 +48,10 @@ Copy `config.example.yaml` to `local_config.yaml` and fill in OAuth credentials.
 - **run.py** - Entry point; starts gevent WSGI server on port 5000.
 - **master_player.py** - Background worker that tracks playback timing, broadcasts queue updates, pre-warms Bender preview after song transitions, and runs nest cleanup loop.
 - **config.py** - Loads YAML config with environment variable overrides.
+- **analytics.py** - Fire-and-forget Redis-native event tracking (user activity, Spotify API calls, OAuth health).
+- **nests.py** - `NestManager` class, nest lifecycle helpers (`should_delete_nest`, `pubsub_channel`, etc.)
+- **templates/spotify_prompt.html** - Spotify connect interstitial shown to new users after Google sign-in.
+- **templates/stats.html** - Public analytics dashboard at `/stats`.
 
 ### Services (Docker Compose)
 
@@ -89,7 +93,7 @@ After song transitions, master_player pre-warms `BENDER|next-preview` via `_peek
 
 **Spotify OAuth tracking** (3 event types): `spotify_oauth_reconnect` (user clicked reconnect button), `spotify_oauth_refresh` (OAuth callback completed), `spotify_oauth_stale` (cached token missing/expired). Per-user breakdown available via sorted sets.
 
-**Dashboard**: `/stats` — gated by `ADMIN_EMAILS` config (env: `ECHONEST_ADMIN_EMAILS`).
+**Dashboard**: `/stats` — public (no auth required). Shows aggregate metrics, Spotify API call counts, OAuth health, DAU trend.
 
 **API endpoint**: `GET /api/stats?days=N` — returns JSON with `today`, `dau`, `dau_trend`, `known_users`, `spotify_api` (call counts + daily trend), and `spotify_oauth` (reconnect/refresh/stale counts + stale_users breakdown).
 
@@ -101,6 +105,7 @@ Backbone.js + jQuery served as static files. Main logic in `static/js/app.js`. N
 
 ### Authentication
 - Google OAuth for login, Spotify OAuth per-user for playback
+- New users see a Spotify connect interstitial after Google sign-in (`templates/spotify_prompt.html`); returning users with cached tokens skip straight to the app
 - `DEV_AUTH_EMAIL` bypasses OAuth when `DEBUG=true` on localhost
 - Public endpoints defined in `SAFE_PATHS` and `SAFE_PARAM_PATHS` lists in `app.py`
 - REST API endpoints under `/api/` use `@require_api_token` decorator with `secrets.compare_digest` for constant-time token comparison
