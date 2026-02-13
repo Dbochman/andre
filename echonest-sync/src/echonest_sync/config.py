@@ -73,11 +73,19 @@ def delete_token() -> None:
 # Config file persistence
 # ---------------------------------------------------------------------------
 
+# Keys that must never be written to the config file on disk.
+# token lives in the OS keychain; keeping it out of YAML prevents
+# Phase 1 → Phase 2 upgrades from leaving credentials in plain text.
+_SECRET_KEYS = {"token"}
+
+
 def save_config(data: dict) -> None:
     """Write/update config.yaml in the config directory.
 
     Merges *data* into existing config (if any) so callers can
-    persist a single key without clobbering the rest.
+    persist a single key without clobbering the rest.  Secret keys
+    (e.g. ``token``) are stripped before writing to ensure credentials
+    never persist on disk.
     """
     config_dir = get_config_dir()
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -92,6 +100,10 @@ def save_config(data: dict) -> None:
             pass
 
     existing.update(data)
+
+    # Scrub secrets so they never end up on disk
+    for key in _SECRET_KEYS:
+        existing.pop(key, None)
 
     with open(config_file, "w") as f:
         yaml.safe_dump(existing, f, default_flow_style=False)

@@ -86,6 +86,29 @@ class TestSaveConfig:
             assert data["server"] == "https://new.com"
             assert data["autostart"] is True  # Preserved
 
+    def test_strips_secrets_from_disk(self, tmp_path):
+        """Token should never be written to config file on disk."""
+        config_file = tmp_path / "config.yaml"
+        # Simulate a Phase 1 config that had token in the file
+        config_file.write_text("server: https://old.com\ntoken: leaked-secret\n")
+        with patch("echonest_sync.config.get_config_dir", return_value=tmp_path):
+            save_config({"server": "https://new.com"})
+            import yaml
+            with open(config_file) as f:
+                data = yaml.safe_load(f)
+            assert "token" not in data
+            assert data["server"] == "https://new.com"
+
+    def test_strips_secrets_from_new_data(self, tmp_path):
+        """Even if caller passes token in data dict, it gets stripped."""
+        with patch("echonest_sync.config.get_config_dir", return_value=tmp_path):
+            save_config({"server": "https://test.com", "token": "should-not-persist"})
+            import yaml
+            config_file = tmp_path / "config.yaml"
+            with open(config_file) as f:
+                data = yaml.safe_load(f)
+            assert "token" not in data
+
 
 class TestLoadConfigWithNewDir:
     def test_prefers_new_config_dir(self, tmp_path):

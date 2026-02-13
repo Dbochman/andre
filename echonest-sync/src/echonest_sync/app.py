@@ -33,11 +33,17 @@ def main():
     setup_logging(verbose=os.environ.get("ECHONEST_VERBOSE", "").lower() in ("1", "true"))
     log.info("echonest-sync desktop app starting")
 
+    # Load config early so we can pick up a non-default server URL
+    # (from config file or ECHONEST_SERVER env var) before onboarding.
+    # This lets dev/staging installs point at the right server.
+    config = load_config()
+    server_hint = config.get("server")
+
     # Check for token
     token = get_token()
     if not token:
         log.info("No token found — launching onboarding")
-        if not _run_onboarding():
+        if not _run_onboarding(server=server_hint):
             log.info("Onboarding cancelled")
             sys.exit(0)
         token = get_token()
@@ -45,12 +51,12 @@ def main():
             log.error("No token after onboarding — exiting")
             sys.exit(1)
 
-    # Load config (server URL was persisted by onboarding)
+    # Reload config (onboarding may have persisted server URL)
     config = load_config()
     server = config.get("server")
     if not server:
         log.error("No server URL configured — re-run onboarding")
-        if not _run_onboarding():
+        if not _run_onboarding(server=server_hint):
             sys.exit(0)
         config = load_config()
         server = config.get("server")
