@@ -501,18 +501,21 @@ class MusicNamespace(WebSocketManager):
 
     def on_add_song(self, song_id, src):
         logger.info('on_add_song called: song_id=%s, src=%s, email=%s', song_id, src, self.email)
-        analytics.track(self.db._r, 'song_add', self.email)
+        result = None
         if src == 'spotify':
             self.log(
                 'add_spotify_song "{0}" "{1}"'.format(self.email, song_id))
-            self._safe_db_call(self.db.add_spotify_song, self.email, song_id, penalty=self.penalty)
+            result = self._safe_db_call(self.db.add_spotify_song, self.email, song_id, penalty=self.penalty)
         elif src == 'youtube':
             logger.info('Adding YouTube song: %s for user %s', song_id, self.email)
-            self._safe_db_call(self.db.add_youtube_song, self.email, song_id, penalty=self.penalty)
+            result = self._safe_db_call(self.db.add_youtube_song, self.email, song_id, penalty=self.penalty)
         elif src == 'soundcloud':
             self.log(
                 'add_soundcloud_song "{0}" "{1}"'.format(self.email, song_id))
-            self._safe_db_call(self.db.add_soundcloud_song, self.email, song_id, penalty=self.penalty)
+            result = self._safe_db_call(self.db.add_soundcloud_song, self.email, song_id, penalty=self.penalty)
+
+        if result not in (None, False):
+            analytics.track(self.db._r, 'song_add', self.email)
 
     def on_fetch_playlist(self):
         self.emit('playlist_update', self.db.get_queued())
@@ -554,8 +557,8 @@ class MusicNamespace(WebSocketManager):
 
     def on_vote(self, id, up):
         self.log('Vote from {0} on {1} {2}'.format(self.email, id, up))
-        analytics.track(self.db._r, 'vote', self.email)
-        self._safe_db_call(self.db.vote, self.email, id, up)
+        if self._safe_db_call(self.db.vote, self.email, id, up) not in (None, False):
+            analytics.track(self.db._r, 'vote', self.email)
 
     def on_kill(self, id):
         self.log('Kill {0} ({2}) from {1}'.format(id, self.email, self.db.get_song_from_queue(id).get('user')))
@@ -571,8 +574,8 @@ class MusicNamespace(WebSocketManager):
 
     def on_airhorn(self, name):
         self.log('Airhorn {0}, {1}'.format(self.email, name))
-        analytics.track(self.db._r, 'airhorn', self.email)
-        self._safe_db_call(self.db.airhorn, self.email, name=name)
+        if self._safe_db_call(self.db.airhorn, self.email, name=name) not in (None, False):
+            analytics.track(self.db._r, 'airhorn', self.email)
 
     def on_free_airhorn(self):
         self.log('Free Airhorn {0}'.format(self.email))
@@ -588,8 +591,8 @@ class MusicNamespace(WebSocketManager):
 
     def on_jam(self, id):
         self.log('{0} jammed {1}'.format(self.email, id))
-        analytics.track(self.db._r, 'jam', self.email)
-        self._safe_db_call(self.db.jam, id, self.email)
+        if self._safe_db_call(self.db.jam, id, self.email) not in (None, False):
+            analytics.track(self.db._r, 'jam', self.email)
 
     def on_benderQueue(self, id):
         self.log('{0} benderqueues {1}'.format(self.email, id))
