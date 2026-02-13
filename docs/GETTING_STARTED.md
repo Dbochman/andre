@@ -1,5 +1,7 @@
 # Getting Started with EchoNest
 
+**[echone.st](https://echone.st)**
+
 EchoNest is a shared music queue for your office, party, or listening group. Everyone adds songs, votes on what plays next, and listens together in real time.
 
 ## Signing In

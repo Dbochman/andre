@@ -24,6 +24,16 @@ EchoNest is a **shared queue, individual playback** system:
 2. Each user connects their own Spotify Premium account
 3. Users play along on their own devices - EchoNest is the DJ, not the speaker
 
+## Getting Started (Users)
+
+1. Open [echone.st](https://echone.st) and click **Sign in with Google**.
+2. After signing in, you'll be prompted to **Connect Spotify** -- click the green button to link your account.
+   - Spotify Premium is required for playback.
+   - Make sure the Spotify app is open on your device before connecting.
+3. That's it -- you're in the queue. Add songs, vote, and listen together.
+
+For the full walkthrough (Bender auto-fill, preview tracks, Nests, airhorns, and more), see the **[Getting Started guide](docs/GETTING_STARTED.md)**.
+
 ## Quick Start (Docker)
 
 ```bash
