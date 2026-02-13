@@ -9,6 +9,7 @@ Produces: dist/EchoNest Sync.app
 """
 
 import os
+import shutil
 import subprocess
 import sys
 
@@ -28,9 +29,6 @@ def build():
         "--osx-bundle-identifier", "st.echone.sync",
         "--target-architecture", "universal2",
 
-        # Info.plist
-        "--info-plist", os.path.join(BUILD_DIR, "Info.plist"),
-
         # App icon
         "--icon", os.path.join(ROOT, "resources", "icon.icns"),
 
@@ -49,6 +47,13 @@ def build():
     print("Building macOS .app bundle...")
     print(" ".join(cmd))
     subprocess.check_call(cmd, cwd=ROOT)
+
+    # Replace PyInstaller's generated Info.plist with our custom one
+    app_plist = os.path.join(ROOT, "dist", "EchoNest Sync.app", "Contents", "Info.plist")
+    custom_plist = os.path.join(BUILD_DIR, "Info.plist")
+    if os.path.exists(custom_plist):
+        print(f"Replacing Info.plist with {custom_plist}")
+        shutil.copy2(custom_plist, app_plist)
 
     print("\nBuild complete: dist/EchoNest Sync.app")
     print("To create a DMG:")
