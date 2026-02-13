@@ -110,18 +110,20 @@ docker compose up -d --build
 
 From your local machine:
 ```bash
-# Sync code to server (excludes local config to preserve server settings)
-rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
-  --exclude='.env' --exclude='local_config.yaml' --exclude='.cache' \
-  /Users/dylanbochman/repos/EchoNest/ deploy@192.81.213.152:/opt/echonest/
-
-# SSH in and rebuild
-ssh deploy@192.81.213.152 "cd /opt/echonest && docker compose up -d --build"
+# Recommended: use the Makefile target
+make deploy
 ```
 
-**One-liner** (sync + rebuild):
+This runs rsync (excluding `.git`, `__pycache__`, `*.pyc`, `oauth_creds`, `local_config.yaml`, `.env`, `venv`, `.venv`) followed by `docker compose up -d --build echonest player` on the server. A Slack notification fires automatically on container start.
+
+**Manual alternative** (if not using Make):
 ```bash
-rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude='.env' --exclude='local_config.yaml' --exclude='.cache' /Users/dylanbochman/repos/EchoNest/ deploy@192.81.213.152:/opt/echonest/ && ssh deploy@192.81.213.152 "cd /opt/echonest && docker compose up -d --build"
+rsync -avz --exclude='.git' --exclude='__pycache__' --exclude='*.pyc' \
+  --exclude='.env' --exclude='local_config.yaml' --exclude='oauth_creds' \
+  --exclude='venv' --exclude='.venv' \
+  . deploy@echone.st:/opt/echonest/
+
+ssh deploy@echone.st "cd /opt/echonest && docker compose up -d --build echonest player"
 ```
 
 **Important**: `local_config.yaml` is excluded to prevent overwriting the server's production config (which has `HOSTNAME: echone.st`).
@@ -195,6 +197,19 @@ Key variables in `/opt/echonest/.env`:
 - `REDIS_PASSWORD=<password>`
 
 Generate a new API token: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
+
+### Slack Notifications
+
+Set `SLACK_WEBHOOK_URL` in `local_config.yaml` to enable Slack notifications. The `slack.py` module posts fire-and-forget messages to the configured webhook:
+
+| Event | When | Scope |
+|-------|------|-------|
+| Deploy notification | Every container start | Global |
+| Now-playing update | Song transition (with album art) | Main nest only |
+| Airhorn blast | User triggers airhorn | Main nest only |
+| Nest created | New nest is created | Global |
+
+All notifications are no-ops when `SLACK_WEBHOOK_URL` is unset or empty.
 
 ---
 

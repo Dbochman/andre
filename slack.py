@@ -50,7 +50,7 @@ def notify_now_playing(song):
     title = song.get('title', 'Unknown')
     artist = song.get('artist', 'Unknown')
     user = song.get('user', '')
-    img = song.get('big_img') or song.get('img', '')
+    img = song.get('img', '')
 
     text = f"\U0001f3b5 Now Playing: *{title}* by *{artist}*\nAdded by {user}"
 
