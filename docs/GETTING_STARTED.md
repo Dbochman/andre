@@ -23,7 +23,7 @@ Songs play in order, influenced by votes. When the queue runs low, EchoNest auto
 2. Type an artist, song, or album name into the search box.
 3. Click a result to add it to the queue.
 
-You can also paste a Spotify URI, YouTube link, or SoundCloud URL directly into the search box.
+You can also paste a Spotify Playlist link, YouTube link, or SoundCloud URL directly into the search box.
 
 ## Voting
 
@@ -49,7 +49,7 @@ Nests are separate listening rooms with their own queues. Think of them as break
 - **Join a Nest** -- enter a code to hop into someone else's Nest.
 - **Back to The EchoNest** -- return to the main room.
 
-Each Nest has its own queue, votes, and now-playing state.
+Each Nest has its own queue, votes, and now-playing state. You can provide a seed track url with a name to influence bender's suggestions.
 
 ## Other Options
 
@@ -64,15 +64,15 @@ The **Other** tab has additional controls:
 | **Skip Playing Song** | Skips the currently playing track. |
 | **Mute** | Mutes your local audio. |
 | **Clear Queue** | Removes all songs from the queue. Use with caution. |
-| **Pause Everything** | Pauses playback for everyone. |
+| **Pause/Unpause Everything** | Toggles paused state for everyone. |
 
 ## Troubleshooting
 
 **Songs aren't playing automatically.**
-Make sure you've connected Spotify (check the **Other** tab for "Reconnect Spotify"). Spotify Premium is required. The Spotify app must be open on your device.
+Make sure you've connected Spotify (check the **Other** tab for "Reconnect Spotify"). Spotify Premium is required. The Spotify app must be open and music must be already playing on your device.
 
-**The queue is empty and nothing is playing.**
-Add a song! Once something is in the queue, Bender will start auto-filling with related tracks to keep the music going.
+**The queue is paused and there is no audio.**
+Unpause Playback Once something is in the queue, Bender will start auto-filling with related tracks to keep the music going.
 
 **Queue elements are flickering or buttons aren't responding.**
 Hard-refresh your browser (Cmd+Shift+R on Mac, Ctrl+Shift+R on Windows). This clears cached scripts and re-establishes the WebSocket connection.
