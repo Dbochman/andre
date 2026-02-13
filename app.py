@@ -461,7 +461,7 @@ class MusicNamespace(WebSocketManager):
             self.logger.info(msg)
 
     def _safe_db_call(self, fn, *args, **kwargs):
-        """Call a DB method, catching RuntimeError for nest guard checks."""
+        """Call a DB method, catching RuntimeError for nest guard checks and transient Spotify errors."""
         try:
             return fn(*args, **kwargs)
         except RuntimeError as e:
@@ -475,6 +475,18 @@ class MusicNamespace(WebSocketManager):
                 self.emit('error', {'message': f'Queue is full{limit_note}'})
                 return None
             raise
+        except (ConnectionError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            logger.warning("Spotify connection error in %s: %s", fn.__name__, e)
+            set_spotify_rate_limit(30)  # Back off 30 seconds
+            self.emit('error', {'message': 'Spotify is temporarily unavailable, try again in a moment'})
+            return None
+        except Exception as e:
+            if handle_spotify_exception(e):
+                self.emit('error', {'message': 'Spotify rate limited, try again later'})
+                return None
+            logger.exception("Unexpected error in %s", fn.__name__)
+            self.emit('error', {'message': 'Something went wrong, try again'})
+            return None
 
     def on_request_volume(self):
         self.emit('volume', str(self.db.get_volume()))

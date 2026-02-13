@@ -46,10 +46,13 @@ def pickle_load_b64(data):
         data = data.decode('ascii')
     return pickle.loads(base64.b64decode(data))
 
-server_tokens = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
+_client_creds_cache = os.path.join(CONF.OAUTH_CACHE_PATH, '.client_credentials')
+server_tokens = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET,
+                                                        cache_handler=spotipy.cache_handler.CacheFileHandler(cache_path=_client_creds_cache))
 spotify_client = spotipy.client.Spotify(client_credentials_manager=server_tokens)
 
-auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET)
+auth = spotipy.oauth2.SpotifyClientCredentials(CONF.SPOTIFY_CLIENT_ID, CONF.SPOTIFY_CLIENT_SECRET,
+                                               cache_handler=spotipy.cache_handler.CacheFileHandler(cache_path=_client_creds_cache))
 if not os.environ.get('SKIP_SPOTIFY_PREFETCH'):
     auth.get_access_token()
 
