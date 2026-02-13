@@ -1,0 +1,133 @@
+name: echonest-sync
+
+on:
+  push:
+    branches:
+      - feature/echonest-sync
+      - main
+    paths:
+      - "echonest-sync/**"
+      - ".github/workflows/echonest-sync.yml"
+    tags:
+      - "sync-v*"
+  pull_request:
+    paths:
+      - "echonest-sync/**"
+      - ".github/workflows/echonest-sync.yml"
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.9", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: echonest-sync
+        run: pip install -e ".[mac]" pytest
+
+      - name: Run tests
+        working-directory: echonest-sync
+        env:
+          SKIP_SPOTIFY_PREFETCH: "1"
+        run: python -m pytest tests/ -v
+
+  build-macos:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/sync-v')
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: echonest-sync
+        run: |
+          pip install -e ".[mac]"
+          pip install pyinstaller
+
+      - name: Build .app bundle
+        working-directory: echonest-sync
+        run: python build/macos/build_app.py
+
+      - name: Create DMG
+        working-directory: echonest-sync
+        run: |
+          hdiutil create -volname "EchoNest Sync" \
+            -srcfolder "dist/EchoNest Sync.app" \
+            -ov -format UDZO \
+            "dist/EchoNest-Sync.dmg"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoNest-Sync-macOS
+          path: echonest-sync/dist/EchoNest-Sync.dmg
+
+  build-windows:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/sync-v')
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: echonest-sync
+        run: |
+          pip install -e ".[win]"
+          pip install pyinstaller
+
+      - name: Build .exe
+        working-directory: echonest-sync
+        run: python build/windows/build_exe.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoNest-Sync-Windows
+          path: "echonest-sync/dist/EchoNest Sync.exe"
+
+  release:
+    needs: [build-macos, build-windows]
+    if: startsWith(github.ref, 'refs/tags/sync-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: EchoNest-Sync-macOS
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: EchoNest-Sync-Windows
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            EchoNest-Sync.dmg
+            EchoNest Sync.exe
+          generate_release_notes: true
