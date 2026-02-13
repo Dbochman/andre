@@ -198,7 +198,7 @@
 
             <div class="jammers">
                 <%_.each(jam, function(j){ %>
-                     <div title="<%-j.user==='the@echonest.com'?'Bender':j.user%>"
+                     <div title="<%-j.user==='the@echonest.com'?'Bender':(j.user+(j.throwback?' (throwback)':''))%>"
                      class="jammer"
                      style="background-image:url(<%-FEEL_SHAME?shame_image(j.user,43):"/userimg/"+j.user+"/img.png"%>)" >
                      </div>
@@ -269,7 +269,7 @@
 	</div>
         <div class="jammers">
           <%_.each(jam, function(j){ %>
-          <div title="<%-j.user==='the@echonest.com'?'Bender':j.user%>"
+          <div title="<%-j.user==='the@echonest.com'?'Bender':(j.user+(j.throwback?' (throwback)':''))%>"
                class="jammer"
                style="background-image:url(<%-FEEL_SHAME?shame_image(j.user,43):"/userimg/"+j.user+"/img.png"%>)" >
           </div>
@@ -321,7 +321,7 @@
         <% _.each(jam, function(j){ %>
             <div class="bigjammer"
                 style="background-image:url(<%-FEEL_SHAME?shame_image(j.user,65):"/userimg/"+j.user+"/img.png"%>)"
-                title="<%-j.user==='the@echonest.com'?'Bender':j.user%>"></div>
+                title="<%-j.user==='the@echonest.com'?'Bender':(j.user+(j.throwback?' (throwback)':''))%>"></div>
         <% }) %>
     </div>
 </script>

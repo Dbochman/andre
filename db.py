@@ -719,6 +719,9 @@ class DB(object):
                     original = self._r.hget(self._key('BENDER|throwback-jam-pending'), trackid)
                     if original and new_id:
                         self.add_jam(self._key('QUEUEJAM|{0}'.format(new_id)), original)
+                        tb_key = self._key('QUEUEJAM_TB|{0}'.format(new_id))
+                        self._r.sadd(tb_key, original)
+                        self._r.expire(tb_key, 24*60*60)
                         self._r.hdel(self._key('BENDER|throwback-jam-pending'), trackid)
                     added += 1
                 else:
@@ -1365,10 +1368,16 @@ class DB(object):
 
     def get_jams(self, queued_song_jams_key):
         jams_raw = self._r.zrange(queued_song_jams_key, 0, self.num_jams(queued_song_jams_key), withscores=True)
+        # Check for throwback markers
+        tb_key = queued_song_jams_key.replace('QUEUEJAM|', 'QUEUEJAM_TB|')
+        tb_users = self._r.smembers(tb_key)
         jams = []
         for user, ts in jams_raw:
-            jams.append({"user": user,
-                         "time": datetime.datetime.fromtimestamp(ts).isoformat()})
+            jam = {"user": user,
+                   "time": datetime.datetime.fromtimestamp(ts).isoformat()}
+            if user in tb_users:
+                jam["throwback"] = True
+            jams.append(jam)
         logger.debug("jams for %s: %s" % (queued_song_jams_key, jams))
         return jams
 
@@ -1455,6 +1464,9 @@ class DB(object):
         self.jam(newId, userid)
         if original_user and original_user != userid:
             self.add_jam(self._key('QUEUEJAM|{0}'.format(newId)), original_user)
+            tb_key = self._key('QUEUEJAM_TB|{0}'.format(newId))
+            self._r.sadd(tb_key, original_user)
+            self._r.expire(tb_key, 24*60*60)
 
     def benderfilter(self, trackId, userid):
         """Filter a Bender preview song and rotate to the next one."""
