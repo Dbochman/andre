@@ -71,6 +71,7 @@
                 </div>
 
                 <div id="other-tab">
+                    <a href="javascript:void(0);" id="unpause-btn" class="left-button" style="display:none;">unpause everything</a>
                     <a href="javascript:void(0);" id="make-player" class="left-button">sync audio</a>
                     <a href="/spotify_connect/authorize?force=1" id="connect-spotify" class="left-button">reconnect spotify</a>
                     <a href="javascript:void(0);" id="change-color" class="left-button">change
@@ -83,7 +84,6 @@
                     <a href="/logout/" class="left-button">log out {{session.email.split('@')[0]}}</a>
                 </div>
                 <div id="echonest-tab" class="visible">
-                    <a href="javascript:void(0);" id="unpause-btn" class="left-button" style="display:none;">unpause everything</a>
                     <a href="javascript:void(0);" id="sync-audio-btn" class="left-button sync-audio-btn">sync audio</a>
                     {% if is_main_nest %}
                     <a href="javascript:void(0);" id="nest-build" class="left-button">build a nest</a>

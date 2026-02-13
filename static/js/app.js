@@ -728,11 +728,11 @@ socket.on('now_playing_update', function(data){
 
     // Update button states
     if (playerpaused) {
-        $('#pause-button').text('unpause everything');
+        $('#pause-button').hide();
         $('#unpause-btn').show();
         document.title = "PAUSED | EchoNest";
     } else {
-        $('#pause-button').text('pause everything');
+        $('#pause-button').show().text('pause everything');
         $('#unpause-btn').hide();
         // If transitioning from paused to unpaused, resume Spotify
         if (wasPaused && is_player) {
@@ -1443,7 +1443,7 @@ function make_player(ev){
         last_synced_spotify_track = null;
         $('#ytapiplayer').css('z-index', 900);
         // Restore sync audio button text when disconnected
-        $('#sync-audio-btn').text('Sync Audio');
+        $('#sync-audio-btn').text('sync audio');
         $('#airhorn-sync-audio').show();
         return;
     }
@@ -1466,7 +1466,7 @@ function make_player(ev){
 
     $('#make-player').text('disconnect audio');
     // Update echonest tab sync button, hide airhorn tab one
-    $('#sync-audio-btn').text('Disconnect Audio');
+    $('#sync-audio-btn').text('disconnect audio');
     $('#airhorn-sync-audio').hide();
 }
 
