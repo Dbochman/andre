@@ -176,12 +176,15 @@ class EchoNestSync(rumps.App):
 
         elif etype == "account_linked":
             email = kw.get("email", "")
+            user_token = kw.get("user_token", "")
             if email:
                 self._linked_email = email
                 self.link_item.title = f"Linked: {email}"
                 self.link_item.set_callback(None)
                 self.search_item.title = "Search & Add Song"
                 self.search_item.set_callback(self.open_search)
+            if user_token:
+                self._token = user_token
 
     def _refresh_status(self):
         """Update the status line to reflect connection + playback state."""

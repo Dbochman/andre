@@ -267,8 +267,11 @@ class EchoNestSyncTray:
 
         elif etype == "account_linked":
             email = kw.get("email", "")
+            user_token = kw.get("user_token", "")
             if email:
                 self._linked_email = email
+            if user_token:
+                self._token = user_token
 
     def _open_link(self):
         if self._server and self._token and not self._linked_email:
@@ -277,7 +280,8 @@ class EchoNestSyncTray:
             from .link import launch_link
 
             def _on_linked(result):
-                self.channel.emit("account_linked", email=result["email"])
+                self.channel.emit("account_linked", email=result["email"],
+                                  user_token=result.get("user_token", ""))
 
             launch_link(self._server, self._token, callback=_on_linked)
 
