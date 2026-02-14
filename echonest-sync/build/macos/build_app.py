@@ -58,11 +58,18 @@ def build():
     subprocess.check_call(cmd, cwd=ROOT)
 
     # Replace PyInstaller's generated Info.plist with our custom one
-    app_plist = os.path.join(ROOT, "dist", "EchoNest Sync.app", "Contents", "Info.plist")
+    app_path = os.path.join(ROOT, "dist", "EchoNest Sync.app")
+    app_plist = os.path.join(app_path, "Contents", "Info.plist")
     custom_plist = os.path.join(BUILD_DIR, "Info.plist")
     if os.path.exists(custom_plist):
         print(f"Replacing Info.plist with {custom_plist}")
         shutil.copy2(custom_plist, app_plist)
+
+    # Ad-hoc codesign so macOS Keychain allows keyring access
+    print("Ad-hoc signing .app bundle...")
+    subprocess.check_call([
+        "codesign", "--force", "--deep", "--sign", "-", app_path,
+    ])
 
     print("\nBuild complete: dist/EchoNest Sync.app")
     print("To create a DMG:")

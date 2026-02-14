@@ -1,4 +1,4 @@
-"""Windows tray app using pystray."""
+"""Cross-platform tray app using pystray (Windows + Linux)."""
 
 import logging
 import os
@@ -14,11 +14,18 @@ log = logging.getLogger(__name__)
 
 
 def _resource_path(name):
-    """Resolve resource path relative to package."""
-    base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                        "..", "resources")
-    alt = os.path.join(os.path.dirname(__file__), "..", "..", "resources")
-    for d in (base, alt):
+    """Resolve resource path — works in dev, pip install, and PyInstaller."""
+    import sys
+    candidates = []
+    # PyInstaller bundle: resources are at _MEIPASS/resources/
+    if getattr(sys, '_MEIPASS', None):
+        candidates.append(os.path.join(sys._MEIPASS, "resources"))
+    # Dev layout: echonest-sync/resources/
+    candidates.append(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.dirname(__file__))), "..", "resources"))
+    # Pip install layout
+    candidates.append(os.path.join(os.path.dirname(__file__), "..", "..", "resources"))
+    for d in candidates:
         p = os.path.join(d, name)
         if os.path.exists(p):
             return p
@@ -40,9 +47,8 @@ def _load_icon(color):
 
 
 class EchoNestSyncTray:
-    def __init__(self, channel, restart_callback=None):
+    def __init__(self, channel):
         self.channel = channel
-        self.restart_callback = restart_callback
 
         # State
         self._sync_paused = False
@@ -70,7 +76,6 @@ class EchoNestSyncTray:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Start at Login", self._toggle_autostart,
                              checked=lambda _: is_autostart_enabled()),
-            pystray.MenuItem("Forget Server...", self._forget),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", self._quit),
         )
@@ -89,14 +94,6 @@ class EchoNestSyncTray:
             disable_autostart()
         else:
             enable_autostart()
-
-    def _forget(self):
-        self.channel.send_command("quit")
-        from .config import delete_token
-        delete_token()
-        self.icon.stop()
-        if self.restart_callback:
-            self.restart_callback()
 
     def _quit(self):
         self.channel.send_command("quit")

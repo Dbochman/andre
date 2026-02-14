@@ -3,7 +3,6 @@
 import logging
 import os
 import platform
-import subprocess
 import sys
 import threading
 
@@ -16,17 +15,10 @@ log = logging.getLogger(__name__)
 
 
 def _run_onboarding(server=None):
-    """Spawn onboarding dialog as subprocess. Returns True on success."""
-    cmd = [sys.executable, "-m", "echonest_sync.onboarding"]
-    if server:
-        cmd.extend(["--server", server])
-    result = subprocess.run(cmd)
-    return result.returncode == 0
-
-
-def _restart():
-    """Re-launch this process (used by 'Forget Server')."""
-    os.execv(sys.executable, [sys.executable, "-m", "echonest_sync.app"])
+    """Run onboarding dialog. Returns True on success."""
+    from .onboarding import OnboardingDialog, DEFAULT_SERVER
+    dialog = OnboardingDialog(server=server or DEFAULT_SERVER)
+    return dialog.run()
 
 
 def main():
@@ -87,19 +79,13 @@ def main():
     system = platform.system()
     if system == "Darwin":
         from .tray_mac import EchoNestSync
-        app = EchoNestSync(channel, restart_callback=_restart)
-        app.run()
-    elif system == "Windows":
-        from .tray_win import EchoNestSyncTray
-        app = EchoNestSyncTray(channel, restart_callback=_restart)
+        app = EchoNestSync(channel)
         app.run()
     else:
-        log.warning("No tray app for %s — running engine only (Ctrl+C to stop)", system)
-        try:
-            engine_thread.join()
-        except KeyboardInterrupt:
-            channel.send_command("quit")
-            log.info("Stopped")
+        # Windows and Linux both use pystray
+        from .tray_win import EchoNestSyncTray
+        app = EchoNestSyncTray(channel)
+        app.run()
 
 
 if __name__ == "__main__":

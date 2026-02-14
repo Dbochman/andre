@@ -13,11 +13,12 @@ dependencies = [
     "click",
     "pyyaml",
     "keyring",
+    "pystray",
+    "pillow",
 ]
 
 [project.optional-dependencies]
 mac = ["rumps"]
-win = ["pystray", "pillow"]
 
 [project.scripts]
 echonest-sync = "echonest_sync.cli:main"

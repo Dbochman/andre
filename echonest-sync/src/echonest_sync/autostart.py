@@ -1,6 +1,7 @@
-"""Manage launch-at-login for macOS (LaunchAgent) and Windows (Startup folder)."""
+"""Manage launch-at-login for macOS (LaunchAgent), Windows (Startup folder), and Linux (XDG autostart)."""
 
 import logging
+import os
 import platform
 import shutil
 import sys
@@ -67,7 +68,6 @@ def _macos_is_enabled() -> bool:
 # ---------------------------------------------------------------------------
 
 def _startup_dir() -> Path:
-    import os
     appdata = os.environ.get("APPDATA", "")
     return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 
@@ -105,6 +105,46 @@ def _windows_is_enabled() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Linux — XDG autostart .desktop file
+# ---------------------------------------------------------------------------
+
+_DESKTOP_TEMPLATE = """\
+[Desktop Entry]
+Type=Application
+Name=EchoNest Sync
+Exec={executable} -m echonest_sync.app
+Icon=echonest-sync
+Terminal=false
+Categories=Audio;Music;
+Comment=Sync your local Spotify with an EchoNest server
+"""
+
+
+def _desktop_path() -> Path:
+    xdg = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return xdg / "autostart" / "echonest-sync.desktop"
+
+
+def _linux_enable() -> None:
+    path = _desktop_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    exe = shutil.which("echonest-sync-app") or sys.executable
+    path.write_text(_DESKTOP_TEMPLATE.format(executable=exe))
+    log.info("XDG autostart written: %s", path)
+
+
+def _linux_disable() -> None:
+    path = _desktop_path()
+    if path.exists():
+        path.unlink()
+        log.info("XDG autostart removed: %s", path)
+
+
+def _linux_is_enabled() -> bool:
+    return _desktop_path().exists()
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -115,7 +155,7 @@ def enable_autostart() -> None:
     elif system == "Windows":
         _windows_enable()
     else:
-        log.warning("Autostart not supported on %s", system)
+        _linux_enable()
 
 
 def disable_autostart() -> None:
@@ -125,7 +165,7 @@ def disable_autostart() -> None:
     elif system == "Windows":
         _windows_disable()
     else:
-        log.warning("Autostart not supported on %s", system)
+        _linux_disable()
 
 
 def is_autostart_enabled() -> bool:
@@ -134,4 +174,4 @@ def is_autostart_enabled() -> bool:
         return _macos_is_enabled()
     elif system == "Windows":
         return _windows_is_enabled()
-    return False
+    return _linux_is_enabled()

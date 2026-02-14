@@ -31,11 +31,10 @@ def _resource_path(name):
 
 
 class EchoNestSync(rumps.App):
-    def __init__(self, channel, restart_callback=None):
+    def __init__(self, channel):
         super().__init__("EchoNest", icon=_resource_path("icon_grey.png"),
                          template=False, quit_button=None)
         self.channel = channel
-        self.restart_callback = restart_callback
 
         # State
         self._sync_paused = False
@@ -50,9 +49,6 @@ class EchoNestSync(rumps.App):
         self.snooze_item = rumps.MenuItem("Snooze 15 min", callback=self.snooze)
         self.autostart_item = rumps.MenuItem("Start at Login",
                                              callback=self.toggle_autostart)
-        self.forget_item = rumps.MenuItem("Forget Server...",
-                                          callback=self.forget)
-
         self.quit_item = rumps.MenuItem("Quit EchoNest Sync", callback=self.quit_app)
 
         self.menu = [
@@ -63,7 +59,6 @@ class EchoNestSync(rumps.App):
             self.snooze_item,
             None,
             self.autostart_item,
-            self.forget_item,
             None,
             self.quit_item,
         ]
@@ -171,18 +166,6 @@ class EchoNestSync(rumps.App):
         else:
             enable_autostart()
             self.autostart_item.state = True
-
-    def forget(self, _):
-        if rumps.alert("Forget Server?",
-                       "This will disconnect and clear your credentials.",
-                       ok="Forget", cancel="Cancel"):
-            self.channel.send_command("quit")
-            from .config import delete_token
-            delete_token()
-            if self.restart_callback:
-                self.restart_callback()
-            else:
-                rumps.quit_application()
 
     def quit_app(self, _):
         self.channel.send_command("quit")

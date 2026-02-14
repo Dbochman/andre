@@ -247,10 +247,13 @@ cd echonest-sync && SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest tests/ -v
 - rumps adds a default Quit menu item — use `quit_button=None` to provide your own.
 - `template=True` in rumps silhouettes colored icons — use `template=False` for the nest artwork.
 - Tests must mock `get_token`/`get_config_dir` to isolate from real keyring, or CLI tests will connect to live servers.
+- PyInstaller bundle must be ad-hoc codesigned or macOS Keychain rejects `keyring.set_password()` with `-67030` (SecAuthFailure). The build script handles this automatically.
+- `sys.executable` in a frozen PyInstaller bundle points to the binary, not a Python interpreter — never pass `-m module` args to it. Use `getattr(sys, 'frozen', False)` to detect.
+- SSE streaming response blocks the engine thread indefinitely. On quit, `_sse_response.close()` must be called to unblock the iterator.
 
 ### Packaging
 
-- `build/macos/build_app.py` — PyInstaller `.app` bundle (universal2, `icon.icns`)
+- `build/macos/build_app.py` — PyInstaller `.app` bundle (`icon.icns`), auto ad-hoc codesigned. Run with `/usr/local/bin/python3` (not Xcode python).
 - `build/windows/build_exe.py` — PyInstaller `.exe` (onefile, `icon.ico`)
 - `.github/workflows/echonest-sync.yml` — CI test matrix + build/release on `sync-v*` tags
 

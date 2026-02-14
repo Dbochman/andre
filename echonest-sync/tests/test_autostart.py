@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from echonest_sync.autostart import (
     LABEL,
+    _desktop_path,
     _plist_path,
     disable_autostart,
     enable_autostart,
@@ -49,12 +50,29 @@ class TestMacOSAutostart:
             disable_autostart()
 
 
-class TestUnsupportedPlatform:
-    def test_enable_noop_on_linux(self):
-        with patch("echonest_sync.autostart.platform.system", return_value="Linux"):
-            # Should not raise, just log warning
+class TestLinuxAutostart:
+    def test_desktop_file_written(self, tmp_path):
+        desktop = tmp_path / "echonest-sync.desktop"
+        with patch("echonest_sync.autostart._desktop_path", return_value=desktop), \
+             patch("echonest_sync.autostart.platform.system", return_value="Linux"):
             enable_autostart()
+            assert desktop.exists()
+            content = desktop.read_text()
+            assert "[Desktop Entry]" in content
+            assert "EchoNest Sync" in content
 
-    def test_is_enabled_false_on_linux(self):
-        with patch("echonest_sync.autostart.platform.system", return_value="Linux"):
+    def test_desktop_file_removed(self, tmp_path):
+        desktop = tmp_path / "echonest-sync.desktop"
+        desktop.write_text("[Desktop Entry]\n")
+        with patch("echonest_sync.autostart._desktop_path", return_value=desktop), \
+             patch("echonest_sync.autostart.platform.system", return_value="Linux"):
+            disable_autostart()
+            assert not desktop.exists()
+
+    def test_is_enabled(self, tmp_path):
+        desktop = tmp_path / "echonest-sync.desktop"
+        with patch("echonest_sync.autostart._desktop_path", return_value=desktop), \
+             patch("echonest_sync.autostart.platform.system", return_value="Linux"):
             assert is_autostart_enabled() is False
+            desktop.write_text("[Desktop Entry]\n")
+            assert is_autostart_enabled() is True

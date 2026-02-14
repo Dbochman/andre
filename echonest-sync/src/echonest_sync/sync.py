@@ -38,6 +38,7 @@ class SyncAgent:
         self._last_override_check = 0
         self._override_grace_until = 0  # suppress override checks until this time
         self._running = True
+        self._sse_response = None  # closed on quit to unblock SSE iterator
 
     # ------------------------------------------------------------------
     # IPC helpers (no-ops when channel is None)
@@ -77,6 +78,12 @@ class SyncAgent:
                 log.info("Sync snoozed for %ds", duration)
             elif cmd.type == "quit":
                 self._running = False
+                # Close the SSE stream to unblock the event iterator
+                if self._sse_response is not None:
+                    try:
+                        self._sse_response.close()
+                    except Exception:
+                        pass
                 log.info("Quit requested")
 
     def _is_sync_active(self):
@@ -278,6 +285,7 @@ class SyncAgent:
                     timeout=(10, None),  # 10s connect, no read timeout
                 )
                 resp.raise_for_status()
+                self._sse_response = resp
                 log.info("Connected — listening for events")
                 backoff = 5  # Reset on successful connect
                 self._emit("connected")
