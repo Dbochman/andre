@@ -73,8 +73,7 @@ def build():
 
     print("\nBuild complete: dist/EchoNest Sync.app")
     print("To create a DMG:")
-    print("  hdiutil create -volname 'EchoNest Sync' -srcfolder 'dist/EchoNest Sync.app' "
-          "-ov -format UDZO 'dist/EchoNest-Sync.dmg'")
+    print("  python build/macos/build_dmg.py")
 
 
 if __name__ == "__main__":

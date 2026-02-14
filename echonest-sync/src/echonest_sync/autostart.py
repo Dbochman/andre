@@ -15,7 +15,13 @@ LABEL = "st.echone.sync"
 # macOS — LaunchAgent plist
 # ---------------------------------------------------------------------------
 
-_PLIST_TEMPLATE = """\
+def _plist_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+
+
+def _build_plist(label: str, program_args: list) -> str:
+    args_xml = "\n".join(f"        <string>{a}</string>" for a in program_args)
+    return f"""\
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -25,9 +31,7 @@ _PLIST_TEMPLATE = """\
     <string>{label}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{executable}</string>
-        <string>-m</string>
-        <string>echonest_sync.app</string>
+{args_xml}
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -38,17 +42,15 @@ _PLIST_TEMPLATE = """\
 """
 
 
-def _plist_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
-
-
 def _macos_enable() -> None:
     path = _plist_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_PLIST_TEMPLATE.format(
-        label=LABEL,
-        executable=sys.executable,
-    ))
+    if getattr(sys, 'frozen', False):
+        # PyInstaller bundle: sys.executable is the binary itself
+        args = [sys.executable]
+    else:
+        args = [sys.executable, "-m", "echonest_sync.app"]
+    path.write_text(_build_plist(LABEL, args))
     log.info("LaunchAgent written: %s", path)
 
 
@@ -77,18 +79,22 @@ def _shortcut_path() -> Path:
 
 
 def _windows_enable() -> None:
+    frozen = getattr(sys, 'frozen', False)
+    exe = sys.executable
+    args = "" if frozen else "-m echonest_sync.app"
     try:
         import winshell  # type: ignore[import-untyped]
         shortcut_path = str(_shortcut_path())
         with winshell.shortcut(shortcut_path) as link:
-            link.path = sys.executable
-            link.arguments = "-m echonest_sync.app"
+            link.path = exe
+            link.arguments = args
             link.description = "EchoNest Sync"
         log.info("Startup shortcut created: %s", shortcut_path)
     except ImportError:
         # Fallback: write a .bat file instead
         bat = _startup_dir() / "EchoNest Sync.bat"
-        bat.write_text(f'@echo off\n"{sys.executable}" -m echonest_sync.app\n')
+        cmd = f'"{exe}"' if frozen else f'"{exe}" -m echonest_sync.app'
+        bat.write_text(f'@echo off\n{cmd}\n')
         log.info("Startup batch file created: %s", bat)
 
 
@@ -112,7 +118,7 @@ _DESKTOP_TEMPLATE = """\
 [Desktop Entry]
 Type=Application
 Name=EchoNest Sync
-Exec={executable} -m echonest_sync.app
+Exec={exec_line}
 Icon=echonest-sync
 Terminal=false
 Categories=Audio;Music;
@@ -128,8 +134,12 @@ def _desktop_path() -> Path:
 def _linux_enable() -> None:
     path = _desktop_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    exe = shutil.which("echonest-sync-app") or sys.executable
-    path.write_text(_DESKTOP_TEMPLATE.format(executable=exe))
+    if getattr(sys, 'frozen', False):
+        exec_line = sys.executable
+    else:
+        exe = shutil.which("echonest-sync-app") or sys.executable
+        exec_line = f"{exe} -m echonest_sync.app"
+    path.write_text(_DESKTOP_TEMPLATE.format(exec_line=exec_line))
     log.info("XDG autostart written: %s", path)
 
 
