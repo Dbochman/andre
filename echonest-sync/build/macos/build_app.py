@@ -40,8 +40,18 @@ def build():
         "--hidden-import", "keyring.backends.macOS",
         "--hidden-import", "keyring.backends.SecretService",
 
-        # Entry point
-        os.path.join(ROOT, "src", "echonest_sync", "app.py"),
+        # Hidden imports for the app modules (relative imports in the package)
+        "--hidden-import", "echonest_sync.config",
+        "--hidden-import", "echonest_sync.ipc",
+        "--hidden-import", "echonest_sync.player",
+        "--hidden-import", "echonest_sync.sync",
+        "--hidden-import", "echonest_sync.app",
+        "--hidden-import", "echonest_sync.tray_mac",
+        "--hidden-import", "echonest_sync.onboarding",
+        "--hidden-import", "echonest_sync.autostart",
+
+        # Entry point (uses absolute imports, not relative)
+        os.path.join(ROOT, "src", "echonest_sync", "__main__.py"),
     ]
 
     print("Building macOS .app bundle...")

@@ -170,19 +170,20 @@ class SyncAgent:
         self.current_src = src
 
         if uri != self.current_track_uri:
-            log.info("Now playing: %s", uri)
+            log.info("Now playing: %s (paused=%s)", uri, is_paused)
             title = data.get("title", "")
             artist = data.get("artist", "")
 
-            if self._is_sync_active():
+            if self._is_sync_active() and not is_paused:
                 self.player.play_track(uri)
             self.current_track_uri = uri
+            self.paused = is_paused
             self._override_count = 0  # Reset on server track change
             # Grace period after track change to let Spotify load
             self._override_grace_until = time.time() + 15
             self._emit("track_changed", uri=uri, title=title, artist=artist)
 
-            if starttime and server_now:
+            if starttime and server_now and not is_paused:
                 elapsed = _elapsed_seconds(starttime, server_now)
                 duration = data.get("duration")
                 # Clamp: don't seek past the track's duration (stale starttime)
@@ -200,8 +201,9 @@ class SyncAgent:
                     # Small delay to let Spotify load the track
                     time.sleep(0.5)
                     self.player.seek_to(elapsed)
+            return
 
-        # Handle pause/resume
+        # Handle pause/resume for same track
         if is_paused and not self.paused:
             log.info("Pausing")
             if self._is_sync_active():

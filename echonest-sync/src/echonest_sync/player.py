@@ -54,7 +54,13 @@ class MacOSPlayer(SpotifyPlayer):
             return None
 
     def play_track(self, uri):
-        self._osascript(f'tell application "Spotify" to play track "{uri}"')
+        # Play track without bringing Spotify to foreground
+        self._osascript(
+            'set frontApp to name of (info for (path to frontmost application))\n'
+            f'tell application "Spotify" to play track "{uri}"\n'
+            'delay 0.1\n'
+            'tell application frontApp to activate'
+        )
 
     def pause(self):
         self._osascript('tell application "Spotify" to pause')

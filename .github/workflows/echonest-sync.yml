@@ -70,19 +70,15 @@ jobs:
         working-directory: echonest-sync
         run: python build/macos/build_app.py
 
-      - name: Create DMG
+      - name: Build .pkg installer
         working-directory: echonest-sync
-        run: |
-          hdiutil create -volname "EchoNest Sync" \
-            -srcfolder "dist/EchoNest Sync.app" \
-            -ov -format UDZO \
-            "dist/EchoNest-Sync.dmg"
+        run: python build/macos/build_pkg.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: EchoNest-Sync-macOS
-          path: echonest-sync/dist/EchoNest-Sync.dmg
+          path: echonest-sync/dist/EchoNest-Sync.pkg
 
   build-windows:
     needs: test
@@ -134,6 +130,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            EchoNest-Sync.dmg
+            EchoNest-Sync.pkg
             EchoNest Sync.exe
           generate_release_notes: true

@@ -12,12 +12,18 @@ log = logging.getLogger(__name__)
 
 
 def _resource_path(name):
-    """Resolve resource path relative to package."""
-    base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                        "..", "resources")
-    # Installed package layout
-    alt = os.path.join(os.path.dirname(__file__), "..", "..", "resources")
-    for d in (base, alt):
+    """Resolve resource path — works in dev, pip install, and PyInstaller."""
+    import sys
+    candidates = []
+    # PyInstaller bundle: resources are at _MEIPASS/resources/
+    if getattr(sys, '_MEIPASS', None):
+        candidates.append(os.path.join(sys._MEIPASS, "resources"))
+    # Dev layout: echonest-sync/resources/
+    candidates.append(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.dirname(__file__))), "..", "resources"))
+    # Pip install layout
+    candidates.append(os.path.join(os.path.dirname(__file__), "..", "..", "resources"))
+    for d in candidates:
         p = os.path.join(d, name)
         if os.path.exists(p):
             return p
@@ -47,7 +53,7 @@ class EchoNestSync(rumps.App):
         self.forget_item = rumps.MenuItem("Forget Server...",
                                           callback=self.forget)
 
-        self.quit_item = rumps.MenuItem("Quit", callback=self.quit_app)
+        self.quit_item = rumps.MenuItem("Quit EchoNest Sync", callback=self.quit_app)
 
         self.menu = [
             self.status_item,

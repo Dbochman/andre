@@ -1,0 +1,5 @@
+#!/bin/bash
+# Post-installation script for EchoNest Sync .pkg
+# Removes quarantine attribute so unsigned app runs without Gatekeeper prompt
+xattr -cr "/Applications/EchoNest Sync.app" 2>/dev/null
+exit 0

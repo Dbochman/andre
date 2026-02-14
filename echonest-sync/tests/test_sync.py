@@ -223,7 +223,7 @@ class TestHandleNowPlaying:
 
     def test_pause(self):
         agent, player = self._agent()
-        # First set a track
+        # New track arriving paused should NOT start playback
         agent._handle_now_playing({
             "trackid": "abc123",
             "src": "spotify",
@@ -232,7 +232,11 @@ class TestHandleNowPlaying:
             "paused": True,
         })
         assert agent.paused is True
-        assert ("pause",) in player.calls
+        # Should not play or pause — just record state
+        play_calls = [c for c in player.calls if c[0] == "play_track"]
+        pause_calls = [c for c in player.calls if c[0] == "pause"]
+        assert len(play_calls) == 0
+        assert len(pause_calls) == 0
 
     def test_resume(self):
         agent, player = self._agent()
@@ -276,7 +280,7 @@ class TestHandleNowPlaying:
             "paused": False,
         })
         assert agent.current_track_uri == "spotify:track:new"
-        assert ("resume",) in player.calls
+        assert ("play_track", "spotify:track:new") in player.calls
         assert agent.paused is False
 
 
