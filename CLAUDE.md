@@ -228,8 +228,9 @@ cd echonest-sync && SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest tests/ -v
 
 - **`sync.py`** — Core sync engine: SSE listener, plays/seeks/pauses local Spotify via AppleScript (macOS), playerctl (Linux), or os.startfile (Windows). Override detection pauses sync when user manually changes tracks (15s grace period after track changes).
 - **`app.py`** — Desktop launcher: checks keyring → spawns onboarding subprocess if no token → starts engine thread → starts tray on main thread.
-- **`tray_mac.py`** — rumps menu bar app. Polls IPC events every 1s. Icon states: green (connected), yellow (disconnected), grey (paused/snoozed/override).
-- **`tray_win.py`** — pystray equivalent for Windows.
+- **`tray_mac.py`** — rumps menu bar app. Polls IPC events every 1s. Icon states: 🪺 green (synced), 🪹 yellow (paused/override), 🪹 grey (disconnected). Custom `NSAlert` with nest icon for dialogs.
+- **`tray_win.py`** — pystray equivalent for Windows/Linux. Dynamic submenus via callables.
+- **`updater.py`** — GitHub Releases API update checker. Finds latest `sync-v*` tag, compares versions, returns platform-appropriate download URL.
 - **`onboarding.py`** — tkinter dialog (runs as subprocess to avoid event loop conflicts). Invite code → `POST /api/sync-token` → stores token in keyring + server URL in config.
 - **`config.py`** — OS-appropriate config dirs, keyring integration (macOS Keychain / Windows DPAPI), `save_config()` strips secrets before writing to disk.
 - **`ipc.py`** — Thread-safe command/event queues between tray GUI and sync engine.
@@ -246,6 +247,9 @@ cd echonest-sync && SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest tests/ -v
 - macOS port 5000 is used by AirPlay Receiver — use port 5001 for local dev.
 - rumps adds a default Quit menu item — use `quit_button=None` to provide your own.
 - `template=True` in rumps silhouettes colored icons — use `template=False` for the nest artwork.
+- `rumps.alert()` uses the Python rocket icon by default — use `NSAlert` directly with `setIcon_()` for custom dialog icons.
+- `rumps.notification()` doesn't work reliably from background threads — use `NSAlert` (synchronous, main thread) or menu item text changes instead.
+- macOS dock icon shows "Python" for pip-installed scripts — use `NSApplicationActivationPolicyAccessory` to hide it (`.app` bundles use `LSUIElement` in Info.plist instead).
 - Tests must mock `get_token`/`get_config_dir` to isolate from real keyring, or CLI tests will connect to live servers.
 - PyInstaller bundle must be ad-hoc codesigned or macOS Keychain rejects `keyring.set_password()` with `-67030` (SecAuthFailure). The build script handles this automatically.
 - `sys.executable` in a frozen PyInstaller bundle points to the binary, not a Python interpreter — never pass `-m module` args to it. Use `getattr(sys, 'frozen', False)` to detect.
