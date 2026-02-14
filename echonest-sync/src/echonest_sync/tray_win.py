@@ -57,6 +57,7 @@ class EchoNestSyncTray:
 
         # State
         self._sync_paused = False
+        self._player_paused = False  # Server playback paused
         self._connected = False
         self._current_track = "No track"
         self._status_text = "Disconnected"
@@ -175,6 +176,8 @@ class EchoNestSyncTray:
             self._status_text = "Disconnected"
             return
         if self._sync_paused:
+            self._status_text = "Connected - Sync Paused"
+        elif self._player_paused:
             self._status_text = "Connected - Paused"
         elif self._current_track and self._current_track != "No track":
             self._status_text = "Connected - Now Playing"
@@ -246,6 +249,10 @@ class EchoNestSyncTray:
                              "You took over — click to rejoin")
             elif status == "waiting":
                 self._update_icon("grey")
+            self._refresh_status()
+
+        elif etype == "player_paused":
+            self._player_paused = kw.get("paused", False)
             self._refresh_status()
 
         elif etype == "queue_updated":

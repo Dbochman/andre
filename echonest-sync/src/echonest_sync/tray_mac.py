@@ -43,6 +43,7 @@ class EchoNestSync(rumps.App):
 
         # State
         self._sync_paused = False
+        self._player_paused = False  # Server playback paused
         self._connected = False
         self._last_disconnect = 0
         self._current_track = "No track"
@@ -152,6 +153,10 @@ class EchoNestSync(rumps.App):
                 self._update_icon("grey")
             self._refresh_status()
 
+        elif etype == "player_paused":
+            self._player_paused = kw.get("paused", False)
+            self._refresh_status()
+
         elif etype == "queue_updated":
             tracks = kw.get("tracks", [])
             self._update_queue(tracks)
@@ -181,9 +186,11 @@ class EchoNestSync(rumps.App):
             self.status_item.title = "Disconnected"
             return
         if self._sync_paused:
+            self.status_item.title = "Connected - Sync Paused"
+        elif self._player_paused:
             self.status_item.title = "Connected - Paused"
         elif self._current_track and self._current_track != "No track":
-            self.status_item.title = f"Connected - Now Playing"
+            self.status_item.title = "Connected - Now Playing"
         else:
             self.status_item.title = "Connected"
 

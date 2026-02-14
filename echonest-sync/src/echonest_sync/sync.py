@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 import time
 from datetime import datetime
 
@@ -128,6 +129,26 @@ class SyncAgent:
         else:
             self._override_count = 0
 
+    def _start_command_timer(self):
+        """Start a repeating timer that drains IPC commands every 1s.
+
+        Returns a threading.Event that can be .set() to stop the timer.
+        This ensures pause/resume/quit commands are processed even while
+        the SSE iterator is blocking on the next event.
+        """
+        stop = threading.Event()
+
+        def _poll():
+            while not stop.is_set():
+                self._process_commands()
+                self._check_user_override()
+                stop.wait(1)
+
+        t = threading.Thread(target=_poll, daemon=True)
+        t.start()
+        # Return an object with .cancel() for compatibility with the caller
+        return stop
+
     # ------------------------------------------------------------------
     # Core handlers
     # ------------------------------------------------------------------
@@ -187,6 +208,8 @@ class SyncAgent:
             # Grace period after track change to let Spotify load
             self._override_grace_until = time.time() + 15
             self._emit("track_changed", uri=uri, title=title, artist=artist)
+            # Tell tray whether server playback is paused
+            self._emit("player_paused", paused=is_paused)
 
             if starttime and server_now and not is_paused:
                 elapsed = _elapsed_seconds(starttime, server_now)
@@ -214,11 +237,13 @@ class SyncAgent:
             if self._is_sync_active():
                 self.player.pause()
             self.paused = True
+            self._emit("player_paused", paused=True)
         elif not is_paused and self.paused:
             log.info("Resuming")
             if self._is_sync_active():
                 self.player.resume()
             self.paused = False
+            self._emit("player_paused", paused=False)
             if starttime and server_now and self._is_sync_active():
                 elapsed = _elapsed_seconds(starttime, server_now)
                 duration = data.get("duration")
@@ -347,6 +372,7 @@ class SyncAgent:
                     return
                 log.info("Spotify detected — connecting")
 
+            cmd_timer = None
             try:
                 log.info("Connecting to %s/api/events ...", self.server)
                 resp = requests.get(
@@ -365,6 +391,10 @@ class SyncAgent:
                 self._initial_sync()
                 self._fetch_queue()
                 self._fetch_devices()
+
+                # Start a background timer that processes IPC commands
+                # while the SSE iterator blocks waiting for events.
+                cmd_timer = self._start_command_timer()
 
                 client = sseclient.SSEClient(resp)
                 for event in client.events():
@@ -403,6 +433,9 @@ class SyncAgent:
             except Exception as e:
                 log.warning("Unexpected error: %s", e)
                 self._emit("disconnected", reason="error")
+            finally:
+                if cmd_timer is not None:
+                    cmd_timer.set()
 
             if not self._running:
                 return
