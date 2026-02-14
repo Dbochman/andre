@@ -138,14 +138,17 @@ class EchoNestSync(rumps.App):
                 self._sync_paused = True
                 self.pause_item.title = "Resume Sync"
                 self._update_icon("yellow")
+                self._refresh_airhorn_item()
             elif status == "syncing":
                 self._sync_paused = False
                 self.pause_item.title = "Pause Sync"
                 self._update_icon("green")
+                self._refresh_airhorn_item()
             elif status == "override":
                 self._sync_paused = True
                 self.pause_item.title = "Resume Sync"
                 self._update_icon("yellow")
+                self._refresh_airhorn_item()
                 rumps.notification("EchoNest Sync", "",
                                    "You took over — click to rejoin",
                                    sound=False)
@@ -166,7 +169,7 @@ class EchoNestSync(rumps.App):
 
         elif etype == "airhorn_toggled":
             self._airhorn_enabled = kw.get("enabled", True)
-            self.airhorn_item.title = f"Airhorns: {'On' if self._airhorn_enabled else 'Off'}"
+            self._refresh_airhorn_item()
 
         elif etype == "airhorn":
             pass  # Sound played by sync engine
@@ -193,6 +196,15 @@ class EchoNestSync(rumps.App):
             self.status_item.title = "Connected - Now Playing"
         else:
             self.status_item.title = "Connected"
+
+    def _refresh_airhorn_item(self):
+        """Update airhorn menu text and interactivity based on sync pause state."""
+        if self._sync_paused:
+            self.airhorn_item.title = "Airhorns: Off (sync paused)"
+            self.airhorn_item.set_callback(None)  # Grey out
+        else:
+            self.airhorn_item.title = f"Airhorns: {'On' if self._airhorn_enabled else 'Off'}"
+            self.airhorn_item.set_callback(self.toggle_airhorn)  # Re-enable
 
     def _update_queue(self, tracks):
         """Replace the Up Next submenu items with current queue tracks."""
@@ -257,7 +269,7 @@ class EchoNestSync(rumps.App):
 
     def toggle_airhorn(self, _):
         self._airhorn_enabled = not self._airhorn_enabled
-        self.airhorn_item.title = f"Airhorns: {'On' if self._airhorn_enabled else 'Off'}"
+        self._refresh_airhorn_item()
         self.channel.send_command("toggle_airhorn")
 
     def open_search(self, _):

@@ -85,8 +85,9 @@ class EchoNestSyncTray:
                 lambda _: "Resume Sync" if self._sync_paused else "Pause Sync",
                 self._toggle_pause),
             pystray.MenuItem(
-                lambda _: f"Airhorns: {'On' if self._airhorn_enabled else 'Off'}",
-                self._toggle_airhorn),
+                lambda _: "Airhorns: Off (sync paused)" if self._sync_paused else f"Airhorns: {'On' if self._airhorn_enabled else 'Off'}",
+                self._toggle_airhorn,
+                enabled=lambda _: not self._sync_paused),
             pystray.MenuItem(
                 lambda _: "Search & Add Song" if self._linked_email else "Search & Add Song (link account first)",
                 self._open_search,

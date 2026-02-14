@@ -292,7 +292,7 @@ class SyncAgent:
 
     def _handle_airhorn(self, data):
         """Play an airhorn sound locally."""
-        if not self.airhorn_enabled:
+        if not self.airhorn_enabled or self._sync_paused:
             return
         name = data.get("name", "airhorn")
         volume = float(data.get("volume", 1.0))
