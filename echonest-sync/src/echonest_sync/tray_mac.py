@@ -73,9 +73,9 @@ class EchoNestSync(rumps.App):
             self.queue_item,
             self.open_item,
             None,  # separator
+            self.pause_item,
             self.airhorn_item,
             self.search_item,
-            self.pause_item,
             None,
             self.link_item,
             self.update_item,

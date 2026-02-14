@@ -81,15 +81,15 @@ class EchoNestSyncTray:
             pystray.MenuItem("Open EchoNest", self._open_echonest),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
+                lambda _: "Resume Sync" if self._sync_paused else "Pause Sync",
+                self._toggle_pause),
+            pystray.MenuItem(
                 lambda _: f"Airhorns: {'On' if self._airhorn_enabled else 'Off'}",
                 self._toggle_airhorn),
             pystray.MenuItem(
                 lambda _: "Search & Add Song" if self._linked_email else "Search & Add Song (link account first)",
                 self._open_search,
                 enabled=lambda _: bool(self._linked_email)),
-            pystray.MenuItem(
-                lambda _: "Resume Sync" if self._sync_paused else "Pause Sync",
-                self._toggle_pause),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 lambda _: f"Linked: {self._linked_email}" if self._linked_email else "Link Account",
