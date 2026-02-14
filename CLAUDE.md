@@ -228,17 +228,26 @@ cd echonest-sync && SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest tests/ -v
 
 - **`sync.py`** — Core sync engine: SSE listener, plays/seeks/pauses local Spotify via AppleScript (macOS), playerctl (Linux), or os.startfile (Windows). Override detection pauses sync when user manually changes tracks (15s grace period after track changes).
 - **`app.py`** — Desktop launcher: checks keyring → spawns onboarding subprocess if no token → starts engine thread → starts tray on main thread.
-- **`tray_mac.py`** — rumps menu bar app. Polls IPC events every 1s. Icon states: 🪺 green (synced), 🪹 yellow (paused/override), 🪹 grey (disconnected). Custom `NSAlert` with nest icon for dialogs.
+- **`tray_mac.py`** — rumps menu bar app. Polls IPC events every 1s. Icon states: 🪺 green (synced), 🪹 yellow (paused/override), 🪹 grey (disconnected). Custom `NSAlert` with nest icon for dialogs. Link Account uses native NSAlert with text field (tkinter crashes when rumps owns main thread).
 - **`tray_win.py`** — pystray equivalent for Windows/Linux. Dynamic submenus via callables.
 - **`updater.py`** — GitHub Releases API update checker. Finds latest `sync-v*` tag, compares versions, returns platform-appropriate download URL.
 - **`onboarding.py`** — tkinter dialog (runs as subprocess to avoid event loop conflicts). Invite code → `POST /api/sync-token` → stores token in keyring + server URL in config.
-- **`config.py`** — OS-appropriate config dirs, keyring integration (macOS Keychain / Windows DPAPI), `save_config()` strips secrets before writing to disk.
+- **`config.py`** — OS-appropriate config dirs, keyring integration (macOS Keychain / Windows DPAPI), `save_config()` strips secrets before writing to disk. `DEFAULTS` dict must include any key that `load_config()` should read from the config file.
 - **`ipc.py`** — Thread-safe command/event queues between tray GUI and sync engine.
 - **`autostart.py`** — LaunchAgent plist (macOS) / Startup folder shortcut (Windows).
+- **`link.py`** — Account linking dialog. On macOS uses NSAlert (via tray_mac); on Windows/Linux uses tkinter. Exchanges 6-char code for per-user HMAC token.
+- **`search.py`** — Tkinter search dialog for finding and adding songs to the queue.
+- **`audio.py`** — Cross-platform audio caching and playback for airhorn sounds.
 
-### Server-Side Endpoint
+### Server-Side Endpoints
 
-`POST /api/sync-token` in `app.py` — exchanges invite code for API token. Rate limited (10 attempts/IP/hour via Redis). Config: `SYNC_INVITE_CODES` list in `local_config.yaml`.
+- `POST /api/sync-token` in `app.py` — exchanges invite code for API token. Rate limited (10 attempts/IP/hour via Redis). Config: `SYNC_INVITE_CODES` list in `local_config.yaml`.
+- `GET /sync/link` — session-auth page that generates a 6-char linking code (stored in Redis with 5min TTL).
+- `POST /api/sync-link` — exchanges linking code for per-user HMAC token. Rate limited. Adds email to `SYNC_LINKED_USERS` Redis set.
+
+### Account Linking
+
+Optional feature: users link their Google account so songs added via the API use their real email (and Gravatar) instead of `openclaw@api`. Per-user tokens are `HMAC-SHA256(SECRET_KEY, "sync:" + email)` — deterministic, no DB lookup. The `require_api_token` decorator checks the shared token first, then iterates linked users (cached 60s). Search & Add is disabled in the tray until the user links their account.
 
 ### Key Gotchas
 
@@ -254,6 +263,9 @@ cd echonest-sync && SKIP_SPOTIFY_PREFETCH=1 python3 -m pytest tests/ -v
 - PyInstaller bundle must be ad-hoc codesigned or macOS Keychain rejects `keyring.set_password()` with `-67030` (SecAuthFailure). The build script handles this automatically.
 - `sys.executable` in a frozen PyInstaller bundle points to the binary, not a Python interpreter — never pass `-m module` args to it. Use `getattr(sys, 'frozen', False)` to detect.
 - SSE streaming response blocks the engine thread indefinitely. On quit, `_sse_response.close()` must be called to unblock the iterator.
+- tkinter `Tk()` cannot be created on a background thread when rumps owns the main thread on macOS — use `NSAlert` with `setAccessoryView_()` for input dialogs instead.
+- `load_config()` only reads keys present in the `DEFAULTS` dict — any new config key (like `email`) must be added there or it will be silently dropped.
+- `Path | None` type hint syntax requires Python 3.10+ — use `from __future__ import annotations` for 3.9 compat.
 
 ### Packaging
 

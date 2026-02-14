@@ -24,11 +24,27 @@ echonest-sync-app
 
 On first launch, an onboarding dialog auto-connects to EchoNest — no invite code or configuration needed. A tray icon appears with playback status and controls.
 
+### Account Linking
+
+Link your Google account so songs you add show your avatar instead of a generic icon:
+
+1. Click **Link Account** in the tray menu
+2. Sign in with Google at the page that opens
+3. Enter the 6-character code in the dialog
+4. Songs you search & add will now show your Gravatar
+
+Linking is optional — the app works without it.
+
 ### Tray Menu
 
 - **Track info** — click to foreground Spotify
+- **Up Next** — submenu showing upcoming queue
 - **Open EchoNest** — opens echone.st in your browser
 - **Pause / Resume Sync** — temporarily stop syncing
+- **Airhorns: On/Off** — toggle airhorn sound playback
+- **Search & Add Song** — search Spotify and add to queue (requires linked account)
+- **Link Account** — link your Google account for identity
+- **Check for Updates** — check GitHub for new releases
 - **Start at Login** — enable/disable autostart
 - **Quit**
 

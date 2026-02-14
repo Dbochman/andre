@@ -4,6 +4,34 @@ All notable changes to EchoNest are documented in this file.
 
 ---
 
+## 2026-02-13
+
+### echonest-sync v0.5.0
+
+- **Account Linking** — Users can link their Google account so songs added via Search & Add show their real Gravatar instead of the generic API avatar
+  - Web-based code exchange: `echone.st/sync/link` generates a 6-char code, desktop app exchanges it for a per-user HMAC token via `POST /api/sync-link`
+  - Per-user tokens are deterministic (`HMAC-SHA256(SECRET_KEY, "sync:" + email)`) — no DB lookup needed
+  - Linked users tracked in Redis `SYNC_LINKED_USERS` set, cached 60s in server memory
+  - Search & Add disabled until account is linked (nudges users to link first)
+  - **Server files**: `app.py` (new routes, updated `require_api_token` decorator), `templates/sync_link.html`
+  - **Client files**: `link.py` (new), `app.py`, `tray_mac.py`, `tray_win.py`, `config.py`
+
+- **Search & Add Song** — Search Spotify from the tray menu and add tracks to the queue
+  - Tkinter dialog with search bar and results list
+  - Uses `/search/v2` and `/api/add_song` endpoints
+  - **Files**: `search.py` (new)
+
+- **Airhorn Playback** — Hear airhorn sounds when someone triggers one
+  - Cross-platform audio caching and playback
+  - Toggle on/off from tray menu
+  - **Files**: `audio.py` (new), `sync.py`
+
+- **Menu Reorganization** — Cleaner tray menu layout
+  - Removed Spotify Devices submenu
+  - Reordered: status/track/queue/Open EchoNest | pause/airhorns/search | link/updates/autostart | quit
+
+---
+
 ## 2026-02-06
 
 ### Features
