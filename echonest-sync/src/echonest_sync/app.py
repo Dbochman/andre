@@ -23,6 +23,21 @@ def _run_onboarding(server=None):
 
 def main():
     setup_logging(verbose=os.environ.get("ECHONEST_VERBOSE", "").lower() in ("1", "true"))
+
+    # Handle --search subprocess invocation (frozen builds re-invoke the
+    # binary with this flag to show the search dialog in its own process,
+    # avoiding the tkinter + rumps segfault on macOS).
+    if "--search" in sys.argv:
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--search", action="store_true")
+        parser.add_argument("--server", required=True)
+        parser.add_argument("--token", required=True)
+        args = parser.parse_args()
+        from .search import SearchDialog
+        SearchDialog(args.server, args.token).show()
+        return
+
     log.info("echonest-sync desktop app starting")
 
     # Load config early so we can pick up a non-default server URL

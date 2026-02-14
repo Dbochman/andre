@@ -136,21 +136,24 @@ class SearchDialog:
 
 
 def launch_search(server: str, token: str) -> None:
-    """Launch the search dialog, handling frozen vs pip-installed detection."""
+    """Launch the search dialog as a subprocess.
+
+    Always uses subprocess to avoid tkinter + rumps crash on macOS
+    (creating Tk() on a background thread when rumps owns the main
+    thread causes a segfault).
+    """
+    import subprocess
     import sys
 
     _is_frozen = getattr(sys, "frozen", False)
 
     if _is_frozen:
-        # Frozen build: run inline on a background thread
-        import threading
-        threading.Thread(
-            target=lambda: SearchDialog(server, token).show(),
-            daemon=True,
-        ).start()
+        # Frozen build: re-invoke the binary with --search flag
+        subprocess.Popen(
+            [sys.executable, "--search", "--server", server, "--token", token],
+        )
     else:
-        # Pip install: spawn as subprocess
-        import subprocess
+        # Pip install: spawn as subprocess via python -m
         subprocess.Popen(
             [sys.executable, "-m", "echonest_sync.search",
              "--server", server, "--token", token],
