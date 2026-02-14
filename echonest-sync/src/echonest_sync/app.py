@@ -92,12 +92,12 @@ def main():
         except Exception:
             pass
         from .tray_mac import EchoNestSync
-        app = EchoNestSync(channel)
+        app = EchoNestSync(channel, server=server, token=token)
         app.run()
     else:
         # Windows and Linux both use pystray
         from .tray_win import EchoNestSyncTray
-        app = EchoNestSyncTray(channel)
+        app = EchoNestSyncTray(channel, server=server, token=token)
         app.run()
 
 

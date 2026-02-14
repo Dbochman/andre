@@ -33,22 +33,30 @@ def _resource_path(name):
 
 
 class EchoNestSync(rumps.App):
-    def __init__(self, channel):
+    def __init__(self, channel, server=None, token=None):
         super().__init__("EchoNest", icon=_resource_path("icon_grey.png"),
                          template=False, quit_button=None)
         self.channel = channel
+        self._server = server
+        self._token = token
 
         # State
         self._sync_paused = False
         self._connected = False
         self._last_disconnect = 0
         self._current_track = "No track"
+        self._airhorn_enabled = True
+        self._devices = []  # list of {id, name, is_active}
 
         # Menu items
         self.status_item = rumps.MenuItem("Disconnected", callback=None)
         self.track_item = rumps.MenuItem("No track", callback=self.focus_spotify)
         self.queue_item = rumps.MenuItem("Up Next")
         self.queue_item.add(rumps.MenuItem("No upcoming tracks", callback=None))
+        self.airhorn_item = rumps.MenuItem("Airhorns: On", callback=self.toggle_airhorn)
+        self.devices_item = rumps.MenuItem("Spotify Devices")
+        self.devices_item.add(rumps.MenuItem("Click to refresh", callback=self.refresh_devices))
+        self.search_item = rumps.MenuItem("Search & Add Song", callback=self.open_search)
         self.pause_item = rumps.MenuItem("Pause Sync", callback=self.toggle_pause)
         self.open_item = rumps.MenuItem("Open EchoNest", callback=self.open_echonest)
         self.update_item = rumps.MenuItem("Check for Updates", callback=self.check_updates)
@@ -62,6 +70,9 @@ class EchoNestSync(rumps.App):
             self.queue_item,
             None,  # separator
             self.open_item,
+            self.airhorn_item,
+            self.devices_item,
+            self.search_item,
             self.pause_item,
             None,
             self.update_item,
@@ -145,6 +156,25 @@ class EchoNestSync(rumps.App):
         elif etype == "user_override":
             pass  # Handled via status_changed
 
+        elif etype == "airhorn_toggled":
+            self._airhorn_enabled = kw.get("enabled", True)
+            self.airhorn_item.title = f"Airhorns: {'On' if self._airhorn_enabled else 'Off'}"
+
+        elif etype == "airhorn":
+            pass  # Sound played by sync engine
+
+        elif etype == "devices_updated":
+            self._devices = kw.get("devices", [])
+            self._update_devices_menu()
+
+        elif etype == "transfer_complete":
+            self.channel.send_command("fetch_devices")
+
+        elif etype == "transfer_failed":
+            error = kw.get("error", "Unknown error")
+            rumps.notification("EchoNest Sync", "", f"Transfer failed: {error}",
+                               sound=False)
+
     def _refresh_status(self):
         """Update the status line to reflect connection + playback state."""
         if not self._connected:
@@ -217,6 +247,39 @@ class EchoNestSync(rumps.App):
             self.update_item.title = f"Up to date (v{CURRENT_VERSION})"
             self._alert("No Updates",
                         f"You're on the latest version (v{CURRENT_VERSION}).")
+
+    def toggle_airhorn(self, _):
+        self._airhorn_enabled = not self._airhorn_enabled
+        self.airhorn_item.title = f"Airhorns: {'On' if self._airhorn_enabled else 'Off'}"
+        self.channel.send_command("toggle_airhorn")
+
+    def refresh_devices(self, _):
+        self.channel.send_command("fetch_devices")
+
+    def _update_devices_menu(self):
+        self.devices_item.clear()
+        if not self._devices:
+            self.devices_item.add(rumps.MenuItem("No devices found", callback=None))
+        else:
+            for dev in self._devices:
+                name = dev.get("name", "Unknown")
+                is_active = dev.get("is_active", False)
+                device_id = dev.get("id", "")
+                item = rumps.MenuItem(
+                    f"{'✓ ' if is_active else ''}{name}",
+                    callback=lambda _, did=device_id: self._transfer_to(did),
+                )
+                self.devices_item.add(item)
+        self.devices_item.add(None)  # separator
+        self.devices_item.add(rumps.MenuItem("Refresh", callback=self.refresh_devices))
+
+    def _transfer_to(self, device_id):
+        self.channel.send_command("transfer_playback", device_id=device_id)
+
+    def open_search(self, _):
+        if self._server and self._token:
+            from .search import launch_search
+            launch_search(self._server, self._token)
 
     def toggle_autostart(self, _):
         if is_autostart_enabled():

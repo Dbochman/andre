@@ -1639,6 +1639,19 @@ def api_queue_clear():
     return jsonify(ok=True)
 
 
+@app.route('/api/add_song', methods=['POST'])
+@require_api_token
+def api_add_song():
+    body = request.get_json(silent=True) or {}
+    track_uri = body.get('track_uri')
+    if not track_uri:
+        return jsonify(error='Missing required field: track_uri'), 400
+    new_id = d.add_spotify_song(API_EMAIL, track_uri, penalty=0)
+    if new_id:
+        return jsonify(ok=True, id=new_id)
+    return jsonify(error='Failed to add song'), 500
+
+
 # ---------------------------------------------------------------------------
 # Spotify Connect (device control) API
 # ---------------------------------------------------------------------------
@@ -1886,6 +1899,10 @@ def api_events():
                     _, vol = data.split('|', 1)
                     payload = json.dumps({'volume': int(vol)})
                     yield 'event: volume\ndata: %s\n\n' % payload
+                elif data.startswith('do_airhorn|'):
+                    _, vol, name = data.split('|', 2)
+                    payload = json.dumps({'volume': float(vol), 'name': name})
+                    yield 'event: airhorn\ndata: %s\n\n' % payload
         except GeneratorExit:
             pass
         finally:

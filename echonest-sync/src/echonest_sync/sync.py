@@ -8,6 +8,8 @@ from datetime import datetime
 import requests
 import sseclient
 
+from .audio import download_audio, play_audio
+
 log = logging.getLogger(__name__)
 
 
@@ -39,6 +41,9 @@ class SyncAgent:
         self._running = True
         self._sse_response = None  # closed on quit to unblock SSE iterator
 
+        # Airhorn state
+        self.airhorn_enabled = True
+
     # ------------------------------------------------------------------
     # IPC helpers (no-ops when channel is None)
     # ------------------------------------------------------------------
@@ -67,6 +72,16 @@ class SyncAgent:
                 self._emit("status_changed", status="syncing")
                 log.info("Sync resumed by user")
                 self._initial_sync()
+            elif cmd.type == "toggle_airhorn":
+                self.airhorn_enabled = not self.airhorn_enabled
+                self._emit("airhorn_toggled", enabled=self.airhorn_enabled)
+                log.info("Airhorns %s", "enabled" if self.airhorn_enabled else "disabled")
+            elif cmd.type == "fetch_devices":
+                self._fetch_devices()
+            elif cmd.type == "transfer_playback":
+                device_id = cmd.kwargs.get("device_id")
+                if device_id:
+                    self._transfer_playback(device_id)
             elif cmd.type == "quit":
                 self._running = False
                 # Close the SSE stream to unblock the event iterator
@@ -250,6 +265,51 @@ class SyncAgent:
                 tracks.append(title)
         self._emit("queue_updated", tracks=tracks)
 
+    def _handle_airhorn(self, data):
+        """Play an airhorn sound locally."""
+        if not self.airhorn_enabled:
+            return
+        name = data.get("name", "airhorn")
+        volume = float(data.get("volume", 1.0))
+        self._emit("airhorn", name=name)
+        filepath = download_audio(self.server, name)
+        if filepath:
+            play_audio(filepath, volume)
+        else:
+            log.warning("Airhorn audio not available: %s", name)
+
+    def _fetch_devices(self):
+        """GET /api/spotify/devices and emit the list."""
+        try:
+            resp = requests.get(
+                f"{self.server}/api/spotify/devices",
+                headers=self._headers(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            devices = data.get("devices", [])
+            self._emit("devices_updated", devices=devices)
+        except Exception as e:
+            log.warning("Failed to fetch devices: %s", e)
+            self._emit("devices_updated", devices=[])
+
+    def _transfer_playback(self, device_id):
+        """POST /api/spotify/transfer to switch playback device."""
+        try:
+            resp = requests.post(
+                f"{self.server}/api/spotify/transfer",
+                headers={**self._headers(), "Content-Type": "application/json"},
+                json={"device_id": device_id},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            self._emit("transfer_complete", device_id=device_id)
+            log.info("Playback transferred to %s", device_id)
+        except Exception as e:
+            self._emit("transfer_failed", error=str(e))
+            log.warning("Transfer failed: %s", e)
+
     def _fetch_queue(self):
         """GET /api/queue to populate queue on connect."""
         try:
@@ -304,6 +364,7 @@ class SyncAgent:
                 # Sync current state before waiting for events
                 self._initial_sync()
                 self._fetch_queue()
+                self._fetch_devices()
 
                 client = sseclient.SSEClient(resp)
                 for event in client.events():
@@ -326,6 +387,8 @@ class SyncAgent:
                         self._handle_player_position(data)
                     elif event.event == "queue_update":
                         self._handle_queue_update(data)
+                    elif event.event == "airhorn":
+                        self._handle_airhorn(data)
 
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code == 401:

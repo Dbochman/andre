@@ -49,8 +49,10 @@ def _load_icon(color):
 
 
 class EchoNestSyncTray:
-    def __init__(self, channel):
+    def __init__(self, channel, server=None, token=None):
         self.channel = channel
+        self._server = server
+        self._token = token
 
         # State
         self._sync_paused = False
@@ -60,6 +62,8 @@ class EchoNestSyncTray:
         self._running = True
         self._update_text = "Check for Updates"
         self._queue_tracks = []
+        self._airhorn_enabled = True
+        self._devices = []  # list of {id, name, is_active}
 
         self.icon = pystray.Icon("echonest-sync", _load_icon("grey"))
         self._build_menu()
@@ -76,6 +80,12 @@ class EchoNestSyncTray:
                 lambda: self._queue_menu_items())),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Open EchoNest", self._open_echonest),
+            pystray.MenuItem(
+                lambda _: f"Airhorns: {'On' if self._airhorn_enabled else 'Off'}",
+                self._toggle_airhorn),
+            pystray.MenuItem("Spotify Devices", pystray.Menu(
+                lambda: self._devices_menu_items())),
+            pystray.MenuItem("Search & Add Song", self._open_search),
             pystray.MenuItem(
                 lambda _: "Resume Sync" if self._sync_paused else "Pause Sync",
                 self._toggle_pause),
@@ -144,6 +154,36 @@ class EchoNestSyncTray:
             items.append(pystray.MenuItem(
                 f"  + {len(self._queue_tracks) - 15} more...", None, enabled=False))
         return items
+
+    def _toggle_airhorn(self):
+        self._airhorn_enabled = not self._airhorn_enabled
+        self.channel.send_command("toggle_airhorn")
+
+    def _devices_menu_items(self):
+        """Generate submenu items for Spotify devices."""
+        if not self._devices:
+            return [pystray.MenuItem("No devices found", None, enabled=False)]
+        items = []
+        for dev in self._devices:
+            name = dev.get("name", "Unknown")
+            is_active = dev.get("is_active", False)
+            device_id = dev.get("id", "")
+            items.append(pystray.MenuItem(
+                f"{'✓ ' if is_active else ''}{name}",
+                lambda did=device_id: self._transfer_to(did),
+            ))
+        # Add a refresh item at the bottom
+        items.append(pystray.Menu.SEPARATOR)
+        items.append(pystray.MenuItem("Refresh", lambda: self.channel.send_command("fetch_devices")))
+        return items
+
+    def _transfer_to(self, device_id):
+        self.channel.send_command("transfer_playback", device_id=device_id)
+
+    def _open_search(self):
+        if self._server and self._token:
+            from .search import launch_search
+            launch_search(self._server, self._token)
 
     def _refresh_status(self):
         """Update the status line to reflect connection + playback state."""
@@ -226,6 +266,22 @@ class EchoNestSyncTray:
 
         elif etype == "queue_updated":
             self._queue_tracks = kw.get("tracks", [])
+
+        elif etype == "airhorn_toggled":
+            self._airhorn_enabled = kw.get("enabled", True)
+
+        elif etype == "airhorn":
+            pass  # Sound played by sync engine
+
+        elif etype == "devices_updated":
+            self._devices = kw.get("devices", [])
+
+        elif etype == "transfer_complete":
+            self.channel.send_command("fetch_devices")
+
+        elif etype == "transfer_failed":
+            error = kw.get("error", "Unknown error")
+            self._notify("EchoNest Sync", f"Transfer failed: {error}")
 
     def run(self):
         """Start the tray app (blocks on main thread)."""
