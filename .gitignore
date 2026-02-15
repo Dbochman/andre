@@ -16,3 +16,6 @@ static/__MACOSX/.cache
 .cache
 cookies.txt
 *.egg-info/
+build/
+dist/
+homebrew-echonest/

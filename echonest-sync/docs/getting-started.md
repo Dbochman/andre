@@ -34,7 +34,16 @@ Since the app isn't signed with an Apple Developer ID, macOS will show a warning
 
 You only need to do this once.
 
-### Option 2: Install from Source
+### Option 2: Homebrew (macOS)
+
+```bash
+brew tap dbochman/echonest
+brew install echonest-sync
+```
+
+Then launch the desktop app with `echonest-sync-app`, or use the CLI directly with `echonest-sync`.
+
+### Option 3: Install from Source
 
 ```bash
 cd echonest-sync

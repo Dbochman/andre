@@ -211,6 +211,9 @@ A standalone Python package in `echonest-sync/` that syncs local Spotify playbac
 ### Commands
 
 ```bash
+# Install via Homebrew (macOS)
+brew tap dbochman/echonest && brew install echonest-sync
+
 # Install in dev mode (macOS)
 cd echonest-sync && pip install -e ".[mac]"
 

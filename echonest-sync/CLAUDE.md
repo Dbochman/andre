@@ -5,6 +5,9 @@ Desktop sync client for EchoNest. Syncs local Spotify playback to an EchoNest se
 ## Commands
 
 ```bash
+# Install via Homebrew (macOS)
+brew tap dbochman/echonest && brew install echonest-sync
+
 # Install in dev mode (macOS)
 pip install -e ".[mac]"
 
