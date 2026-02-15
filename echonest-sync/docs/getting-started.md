@@ -107,7 +107,8 @@ Click the tray icon to access the menu:
 | **Now playing track** | Click to bring Spotify to the front |
 | **Up Next** | Submenu showing the upcoming queue (up to 15 tracks) |
 | **Open EchoNest** | Opens echone.st in your browser |
-| **Pause Sync / Resume Sync** | Temporarily stop or restart syncing |
+| **Pause Sync / Resume Sync** | Temporarily stop or restart syncing (also pauses local Spotify) |
+| **Mini Player** | Toggle the floating always-on-top mini player window |
 | **Airhorns: On / Off** | Toggle airhorn sound effects |
 | **Search & Add Song** | Search Spotify and add songs to the queue (requires linked account) |
 | **Link Account** | Link your Google account for identity |

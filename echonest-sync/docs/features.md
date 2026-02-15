@@ -16,6 +16,29 @@ If you manually change the track in Spotify (skip, search for something else, et
 
 There's a 15-second grace period after each track change to let Spotify load — the app won't flag normal transitions as overrides.
 
+## Mini Player
+
+A floating always-on-top mini player window showing the current track, album art, and a live progress bar. Toggle it from the **Mini Player** item in the tray menu.
+
+### What It Shows
+
+- **Album art** (cached locally for fast loading)
+- **Track title and artist**
+- **Progress bar** with elapsed/total time (interpolated at 250ms for smooth updates)
+- **Status dot** — green (syncing), yellow (paused/override), grey (disconnected)
+- **Up next** — the next track in the queue
+
+### Controls
+
+| Control | Action |
+|---------|--------|
+| **Play/Pause icon** | Click to pause sync (stops local Spotify) or resume sync |
+| **Airhorns indicator** | Click to toggle airhorn sounds on/off |
+| **Close button** (✕) | Close the mini player |
+| **Drag anywhere** | Move the window — position is remembered between sessions |
+
+When paused, the time display blinks to indicate playback is stopped.
+
 ## Search & Add
 
 Search Spotify and add songs directly to the EchoNest queue without opening a browser.
