@@ -34,31 +34,46 @@ Since the app isn't signed with an Apple Developer ID, macOS will show a warning
 
 You only need to do this once.
 
-### Option 2: Homebrew (macOS)
+### Option 2: Homebrew (macOS — CLI only)
 
 ```bash
 brew tap dbochman/echonest
 brew install echonest-sync
 ```
 
-Then launch the desktop app with `echonest-sync-app`, or use the CLI directly with `echonest-sync`.
+This installs the CLI sync agent (no tray icon). Set up with:
+
+```bash
+echonest-sync login
+echonest-sync
+```
+
+For the desktop tray app, use Option 1 (.dmg) instead.
 
 ### Option 3: Install from Source
 
 ```bash
 cd echonest-sync
 
-# macOS
-pip install -e ".[mac]"
-
-# Windows / Linux
+# CLI only
 pip install -e .
+
+# Desktop app (macOS)
+pip install -e ".[app,mac]"
+
+# Desktop app (Windows / Linux)
+pip install -e ".[app]"
 ```
 
 Then launch with:
 
 ```bash
+# Desktop tray app
 echonest-sync-app
+
+# Or CLI
+echonest-sync login
+echonest-sync
 ```
 
 ## First Launch
