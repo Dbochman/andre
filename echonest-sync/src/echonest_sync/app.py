@@ -24,7 +24,10 @@ def _run_onboarding(server=None):
 def main():
     # Guard: fail gracefully if GUI deps not installed (e.g. CLI-only Homebrew install)
     try:
-        import pystray  # noqa: F401
+        if platform.system() == "Darwin":
+            import rumps  # noqa: F401
+        else:
+            import pystray  # noqa: F401
     except ImportError:
         print("echonest-sync-app requires GUI dependencies.")
         print("Install with:  pip install 'echonest-sync[app]'")

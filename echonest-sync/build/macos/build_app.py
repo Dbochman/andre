@@ -48,6 +48,12 @@ def build():
         "--hidden-import", "echonest_sync.tray_mac",
         "--hidden-import", "echonest_sync.onboarding",
         "--hidden-import", "echonest_sync.autostart",
+        "--hidden-import", "echonest_sync.link",
+        "--hidden-import", "echonest_sync.search",
+        "--hidden-import", "echonest_sync.audio",
+        "--hidden-import", "echonest_sync.miniplayer",
+        "--hidden-import", "echonest_sync.updater",
+        "--hidden-import", "echonest_sync.cli",
 
         # Entry point (uses absolute imports, not relative)
         os.path.join(ROOT, "src", "echonest_sync", "__main__.py"),
