@@ -333,9 +333,20 @@ class EchoNestSyncTray:
                 cmd = [sys.executable, "--miniplayer"]
             else:
                 cmd = [sys.executable, "-m", "echonest_sync.miniplayer"]
-            self._miniplayer_proc = subprocess.Popen(
-                cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            # On Windows --windowed builds, the exe has subsystem=WINDOWS
+            # which means child processes don't get stdin/stdout by default.
+            # Pass CREATE_NO_WINDOW + startupinfo to ensure pipes work.
+            kwargs = dict(
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESTDHANDLES
+                kwargs["startupinfo"] = startupinfo
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            self._miniplayer_proc = subprocess.Popen(cmd, **kwargs)
             log.info("Mini player spawned (pid=%d)", self._miniplayer_proc.pid)
 
             # Send buffered state

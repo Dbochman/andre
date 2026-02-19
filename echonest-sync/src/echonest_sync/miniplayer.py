@@ -281,6 +281,9 @@ class MiniPlayerWindow:
     def _read_stdin(self):
         """Read JSON lines from stdin in a background thread."""
         try:
+            if sys.stdin is None:
+                log.warning("stdin is None (windowed mode) — miniplayer IPC disabled")
+                return
             for line in sys.stdin:
                 line = line.strip()
                 if not line:
@@ -450,6 +453,8 @@ class MiniPlayerWindow:
 
     def _send(self, msg):
         try:
+            if sys.stdout is None:
+                return
             sys.stdout.write(json.dumps(msg) + "\n")
             sys.stdout.flush()
         except (BrokenPipeError, OSError):
