@@ -2,10 +2,13 @@
 
 Usage:
     cd echonest-sync
-    python build/macos/build_dmg.py
+    python build/macos/build_dmg.py [--adhoc]
 
 Requires: dist/EchoNest Sync.app (run build_app.py first)
 Produces: dist/EchoNest-Sync.dmg
+
+By default, signs the DMG with Developer ID and submits for notarization.
+Pass --adhoc to skip signing/notarization (local dev).
 """
 
 import os
@@ -14,6 +17,8 @@ import subprocess
 import sys
 import tempfile
 import time
+
+NOTARIZE_PROFILE = "EchoNest-Notarize"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DIST = os.path.join(ROOT, "dist")
@@ -214,10 +219,34 @@ def build_dmg():
             "-o", DMG_PATH,
         ])
 
+    adhoc = "--adhoc" in sys.argv
+
+    if not adhoc:
+        # Notarize the DMG
+        print("\nSubmitting DMG for notarization...")
+        result = subprocess.run([
+            "xcrun", "notarytool", "submit", DMG_PATH,
+            "--keychain-profile", NOTARIZE_PROFILE,
+            "--wait",
+        ], capture_output=True, text=True, timeout=600)
+        print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+        if result.returncode != 0:
+            print("Notarization FAILED.")
+            sys.exit(1)
+        print("Notarization succeeded.")
+
+        # Staple the ticket to the DMG
+        print("Stapling notarization ticket to DMG...")
+        subprocess.check_call(["xcrun", "stapler", "staple", DMG_PATH])
+
     print(f"\nDMG created: {DMG_PATH}")
     # Show size
     size_mb = os.path.getsize(DMG_PATH) / (1024 * 1024)
     print(f"Size: {size_mb:.1f} MB")
+    if not adhoc:
+        print("(Signed + Notarized)")
 
 
 if __name__ == "__main__":

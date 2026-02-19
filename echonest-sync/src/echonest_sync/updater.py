@@ -9,7 +9,7 @@ import requests
 log = logging.getLogger(__name__)
 
 GITHUB_REPO = "Dbochman/EchoNest"
-CURRENT_VERSION = "0.7.1"
+CURRENT_VERSION = "0.7.2"
 
 
 def _parse_version(tag):
