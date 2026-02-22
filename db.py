@@ -1618,8 +1618,8 @@ class DB(object):
             self._r.zrem(self._key('MISC|priority-queue'), song)
             data = self.get_song_from_queue(song)
 
-            if (data and data['src'] == 'spotify'
-                    and data['user'] != 'the@echonest.com'):
+            if (data and data.get('src') == 'spotify'
+                    and data.get('user') != 'the@echonest.com'):
                 #got something from a human, set last-queued and clear bender caches
                 self._r.set(self._key('MISC|last-queued'), data['trackid'])
                 self._clear_all_bender_caches()
@@ -1629,7 +1629,9 @@ class DB(object):
                     logger.warning("Failed to ensure fill songs: %s", e)
                 self._r.delete(self._key('MISC|bender_streak_start'))
 
-            if not data:
+            if 'src' not in data:
+                # Song hash expired or is corrupt — skip it
+                logger.warning("Skipping song %s with missing data (keys: %s)", song, list(data.keys()))
                 continue
 
             self._r.expire(self._key('QUEUE|{0}'.format(song)), 3*60*60)
