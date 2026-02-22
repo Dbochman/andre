@@ -63,6 +63,23 @@ def _get_authenticated_email():
         return session['email']
     return None
 
+
+def _log_action(action, email, **extra):
+    """Structured audit log for security-relevant actions."""
+    logger.info("AUDIT action=%s email=%s ip=%s ua=%s %s",
+                action, email, request.remote_addr,
+                request.headers.get('User-Agent', '-'),
+                ' '.join(f'{k}={v}' for k, v in extra.items()))
+
+
+def _check_rate_limit(r, email, action, limit, window=3600):
+    """Per-user action rate limiting via Redis incr/expire. Returns True if allowed."""
+    key = f'RATE|{action}|{email}'
+    count = r.incr(key)
+    if count == 1:
+        r.expire(key, window)
+    return count <= limit
+
 def _parse_session_cookie():
     """Parse the session cookie manually when Flask's session isn't available."""
     from itsdangerous import URLSafeTimedSerializer, BadSignature
@@ -343,10 +360,12 @@ class MusicNamespace(WebSocketManager):
                 logger.exception('Failed to join nest %s', nest_id)
         self.spawn(self.listener)
         self.log('New namespace for {0} (nest={1})'.format(self.email, self.nest_id))
+        _log_action('ws_connect', self.email, nest=self.nest_id)
         analytics.track(self.db._r, 'ws_connect', self.email)
 
     def _on_disconnect(self):
         """Leave nest on WebSocket disconnect."""
+        _log_action('ws_disconnect', self.email, nest=self.nest_id)
         analytics.track(self.db._r, 'ws_disconnect', self.email)
         if nest_manager:
             try:
@@ -507,6 +526,9 @@ class MusicNamespace(WebSocketManager):
 
     def on_add_song(self, song_id, src):
         logger.info('on_add_song called: song_id=%s, src=%s, email=%s', song_id, src, self.email)
+        if not _check_rate_limit(self.db._r, self.email, 'add_song', 50):
+            self.emit('error', {'message': 'Rate limit reached — max 50 songs/hour'})
+            return
         result = None
         if src == 'spotify':
             self.log(
@@ -581,6 +603,9 @@ class MusicNamespace(WebSocketManager):
 
     def on_airhorn(self, name):
         self.log('Airhorn {0}, {1}'.format(self.email, name))
+        if not _check_rate_limit(self.db._r, self.email, 'airhorn', 20):
+            self.emit('error', {'message': 'Rate limit reached — max 20 airhorns/hour'})
+            return
         if self._safe_db_call(self.db.airhorn, self.email, name=name) not in (None, False):
             analytics.track(self.db._r, 'airhorn', self.email)
 
@@ -621,8 +646,12 @@ class MusicNamespace(WebSocketManager):
         self._safe_db_call(self.db.unpause, self.email)
 
     def on_add_comment(self, song_id, user_id, comment):
-        self.log("Add comment from {}!".format(user_id))
-        self._safe_db_call(self.db.add_comment, song_id, user_id, comment)
+        # Ignore client-supplied user_id — use authenticated identity
+        if not _check_rate_limit(self.db._r, self.email, 'comment', 30):
+            self.emit('error', {'message': 'Rate limit reached — max 30 comments/hour'})
+            return
+        self.log("Add comment from {}!".format(self.email))
+        self._safe_db_call(self.db.add_comment, song_id, self.email, comment)
 
     def on_get_comments_for_song(self, song_id):
         comments = self.db.get_comments(song_id)
@@ -766,8 +795,8 @@ SAFE_PATHS = ('/login/', '/login/google', '/logout/', '/playing/', '/queue/', '/
               '/signup/', '/signup', '/api/jammit/', '/health', '/stats',
               '/authentication/callback', '/token', '/last/', '/airhorns/', '/z/',
               '/sync/link')
-SAFE_PARAM_PATHS = ('/history', '/user_history', '/user_jam_history', '/search/v2', '/youtube/lookup', '/youtube/playlist', '/add_song',
-    '/blast_airhorn', '/airhorn_list', '/queue/', '/jam', '/api/')
+SAFE_PARAM_PATHS = ('/history', '/user_history', '/user_jam_history', '/search/v2', '/youtube/lookup', '/youtube/playlist',
+    '/airhorn_list', '/queue/', '/api/')
 VALID_HOSTS = ('localhost:5000', 'localhost:5001', '127.0.0.1:5000', '127.0.0.1:5001',
                str(CONF.HOSTNAME) if CONF.HOSTNAME else '',
                str(CONF.ECHONEST_DOMAIN) if getattr(CONF, 'ECHONEST_DOMAIN', None) else '')
@@ -803,18 +832,27 @@ def require_auth():
                 session['fullname'] = 'Dev User'
                 return
         # Redirect to login for unauthenticated requests
+        _log_action('auth_redirect', '-', path=request.path)
         return redirect('/login/')
+
+
+_ALLOWED_ORIGINS = set()
+if CONF.HOSTNAME:
+    _ALLOWED_ORIGINS.add(f'https://{CONF.HOSTNAME}')
+    _ALLOWED_ORIGINS.add(f'http://{CONF.HOSTNAME}')
+if CONF.DEBUG:
+    _ALLOWED_ORIGINS |= {
+        'http://localhost:5000', 'http://localhost:5001',
+        'http://127.0.0.1:5000', 'http://127.0.0.1:5001',
+    }
 
 
 @app.after_request
 def add_cors_header(response):
-    unlikely_origin_string = 'lol origins are for wimps'
-    origin = request.environ.get('HTTP_ORIGIN', unlikely_origin_string)
-    response.headers.set('Access-Control-Allow-Credentials', 'true')
-    if (origin != unlikely_origin_string):
+    origin = request.environ.get('HTTP_ORIGIN')
+    if origin and origin in _ALLOWED_ORIGINS:
         response.headers.set('Access-Control-Allow-Origin', origin)
-        return response
-    response.headers.set('Access-Control-Allow-Origin', '*')
+        response.headers.set('Access-Control-Allow-Credentials', 'true')
     return response
 
 # Determine protocol and host for OAuth redirect URIs
@@ -900,6 +938,7 @@ def auth_callback():
     for k1, k2 in (('email', 'email',), ('fullname', 'name'),):
         session[k1] = user[k2]
 
+    _log_action('login', email)
     analytics.track(d._r, 'login', email)
 
     # If already linked to Spotify, go home; otherwise prompt to connect.
@@ -1039,10 +1078,13 @@ def jambutton():
 
 
 @app.route('/jam', methods=['POST'])
+@require_session_or_api_token
 def jam():
+    from flask import g
     id = request.values['id']
-    email = request.values['email']
+    email = g.auth_email
     app.logger.debug('Jam {0}, {1}'.format(email, id))
+    _log_action('jam', email, song_id=id)
     d.jam(id, email)
 
     resp = jsonify({"success": True})
@@ -1311,10 +1353,13 @@ def youtube_playlist():
 
 
 @app.route('/add_song', methods=['POST'])
+@require_session_or_api_token
 def add_song_v2():
+    from flask import g
     track_uri = request.values['track_uri']
-    email = request.values['email']
+    email = g.auth_email
     app.logger.debug('add_spotify_song "{0}" "{1}"'.format(email, track_uri))
+    _log_action('add_song', email, track_uri=track_uri)
     d.add_spotify_song(email, track_uri, penalty=0)
 
     resp = jsonify({"success": True})
@@ -1324,10 +1369,13 @@ def add_song_v2():
 
 
 @app.route('/blast_airhorn', methods=['POST'])
+@require_session_or_api_token
 def blast_airhorn():
+    from flask import g
     airhorn_name = request.values['name']
-    email = request.values['email']
+    email = g.auth_email
     app.logger.debug('Airhorn {0}, {1}'.format(email, airhorn_name))
+    _log_action('blast_airhorn', email, name=airhorn_name)
     d.airhorn(userid=email, name=airhorn_name)
 
     resp = jsonify({"success": True})
@@ -1583,6 +1631,7 @@ def require_api_token(f):
         # Check shared API token first (fast path)
         if secrets.compare_digest(provided_token, configured_token):
             g.auth_email = API_EMAIL
+            _log_action('api_auth_ok', API_EMAIL, path=request.path)
             return f(*args, **kwargs)
 
         # Check per-user sync tokens
@@ -1590,8 +1639,10 @@ def require_api_token(f):
             expected = _compute_user_token(email)
             if secrets.compare_digest(provided_token, expected):
                 g.auth_email = email
+                _log_action('api_auth_ok', email, path=request.path)
                 return f(*args, **kwargs)
 
+        _log_action('api_auth_fail', '-', path=request.path)
         return jsonify(error='Invalid API token'), 403
 
     return decorated
