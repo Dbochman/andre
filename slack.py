@@ -39,7 +39,26 @@ def post(text, blocks=None):
 
 
 def notify_deploy():
-    """Post deploy notification with resync reminder."""
+    """Post deploy notification with resync reminder.
+
+    Rate-limited to once per 5 minutes via Redis to prevent Slack spam
+    during crash loops.
+    """
+    try:
+        import redis
+        r = redis.StrictRedis(
+            host=getattr(CONF, 'REDIS_HOST', None) or 'localhost',
+            port=getattr(CONF, 'REDIS_PORT', None) or 6379,
+            password=getattr(CONF, 'REDIS_PASSWORD', None) or None,
+            decode_responses=True,
+        )
+        # SET NX with 5-min TTL — only succeeds if key doesn't exist
+        if not r.set('SLACK|deploy_cooldown', '1', nx=True, ex=300):
+            logger.debug("notify_deploy suppressed (cooldown active)")
+            return
+    except Exception:
+        # Redis unavailable — send anyway (better one extra than none)
+        pass
     post("\U0001f504 EchoNest is restarting \u2014 you may need to resync audio.")
 
 
