@@ -4,6 +4,14 @@ All notable changes to EchoNest are documented in this file.
 
 ---
 
+## 2026-02-24
+
+### Bug Fix
+
+- **Self-healing stale queue entries** — `QUEUE|{id}` hashes have a 24-hour TTL but the priority queue sorted set does not. When the system is paused >24h, metadata expires while ghost IDs remain, making the queue appear empty and blocking Bender backfill. Added `_purge_stale_queue_entries()` helper that scans the sorted set and removes IDs whose hash has expired. Called by `get_queued()` (display path) and `backfill_queue()` (fill path). `pop_next()` also independently skips entries with missing `src` field.
+
+---
+
 ## 2026-02-21
 
 ### Security

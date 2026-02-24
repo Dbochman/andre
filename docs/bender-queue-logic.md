@@ -71,10 +71,17 @@ Called by `get_queued()` to append the preview row to the queue data sent to the
 Called by the player after each song transition.
 
 **Flow:**
-1. Check `MISC|priority-queue` size vs `MIN_QUEUE_DEPTH` (default 3)
-2. If queue is short, call `get_fill_song()` for each needed track
-3. `get_fill_song()` consumes the preview first, so the previewed track flows into the queue
-4. Respects `MAX_BENDER_MINUTES` streak limit
+1. Purge stale entries via `_purge_stale_queue_entries()` (see below)
+2. Check `MISC|priority-queue` size vs `MIN_QUEUE_DEPTH` (default 3)
+3. If queue is short, call `get_fill_song()` for each needed track
+4. `get_fill_song()` consumes the preview first, so the previewed track flows into the queue
+5. Respects `MAX_BENDER_MINUTES` streak limit
+
+### `_purge_stale_queue_entries()` — Self-Healing
+
+`QUEUE|{id}` hashes have a 24-hour TTL but the priority queue sorted set does not. If the system is paused >24h, the metadata expires while the IDs remain — creating ghost entries that `zcard` counts as real songs.
+
+This helper scans the sorted set, checks which IDs have lost their hash, and removes them via `ZREM`. Called by `get_queued()` and `backfill_queue()` so depth checks always reflect real songs. `pop_next()` also independently skips entries with missing `src` field.
 
 ## Player Interactions
 
@@ -156,7 +163,8 @@ Filters the preview track so Bender never picks it again, then rotates to a new 
 | `MISC\|last-queued` | string | none | Last human-queued trackid (primary seed) |
 | `MISC\|last-bender-track` | string | none | Last bender-added trackid (fallback seed) |
 | `MISC\|bender_streak_start` | string | none | Pickled datetime of streak start |
-| `MISC\|priority-queue` | sorted set | none | The actual queue (score = display order) |
+| `MISC\|priority-queue` | sorted set | none | The actual queue (score = display order). No TTL — stale entries purged by `_purge_stale_queue_entries()` |
+| `QUEUE\|{id}` | hash | 24 hours | Song metadata (title, artist, trackid, etc.). TTL mismatch with sorted set is handled by stale-entry purging |
 
 ## Config
 
