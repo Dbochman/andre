@@ -1165,12 +1165,16 @@ function spotify_playlist_search(playlistId) {
         data: {limit: 20, fields: 'items(track(uri,name,artists,album,duration_ms))'}
     }).then(function(data) {
         var tracks = [];
+        if (!data.items) {
+            // Spotify no longer returns items for playlists you don't own
+            return {tracks: [], unavailable: true};
+        }
         for (var i = 0; i < data.items.length; i++) {
             if (data.items[i].track) {
                 tracks.push(data.items[i].track);
             }
         }
-        return tracks;
+        return {tracks: tracks, unavailable: false};
     });
 }
 
@@ -1335,8 +1339,25 @@ function uri_search_submit(ev){
                 renderTrackList(tracks, 'Album');
             });
         } else if (urlType === 'playlist') {
-            spotify_playlist_search(urlId).then(function(tracks) {
-                renderTrackList(tracks, 'Playlist');
+            spotify_playlist_search(urlId).then(function(result) {
+                if (result.unavailable) {
+                    var target = $('#spotify-results');
+                    target.append(
+                        '<div class="search-item"><div class="text">' +
+                        '<h4>This playlist\'s tracks aren\'t available</h4>' +
+                        '<p style="margin:4px 0 0;font-size:0.85em;opacity:0.7;">' +
+                        'Spotify only allows loading playlists you own. ' +
+                        'To add tracks: open the playlist in Spotify, select the songs, ' +
+                        'copy them (Ctrl+C / Cmd+C), and paste the URLs here.</p>' +
+                        '</div></div>'
+                    );
+                } else if (result.tracks.length === 0) {
+                    $('#spotify-results').append(
+                        '<div class="search-item"><div class="text"><h4>Playlist is empty</h4></div></div>'
+                    );
+                } else {
+                    renderTrackList(result.tracks, 'Playlist');
+                }
             }).fail(function(jqXHR) {
                 var target = $('#spotify-results');
                 if (jqXHR.status === 404 || jqXHR.status === 403) {
