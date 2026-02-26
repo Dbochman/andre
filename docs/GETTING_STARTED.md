@@ -34,8 +34,9 @@ Below the now-playing area you'll see a preview of the next track Bender is cons
 There are a few ways to get music into the queue:
 
 1. **Search** -- click the Search tab, type an artist or song name, and click a result to add it.
-2. **Paste a link** -- paste a Spotify Playlist link, YouTube link, or SoundCloud URL directly into the search box.
-3. **Queue from the preview** -- if Bender is showing a preview track below now-playing, click its **Queue** button to add it directly.
+2. **Paste a link** -- paste a Spotify track, album, artist, or playlist link, YouTube link, or SoundCloud URL directly into the search box.
+3. **Paste multiple tracks** -- select tracks in Spotify, copy them (Ctrl+C / Cmd+C), and paste the URLs into the search box. You'll see an "Add X Tracks to the Queue" option.
+4. **Queue from the preview** -- if Bender is showing a preview track below now-playing, click its **Queue** button to add it directly.
 
 ## Voting
 
@@ -60,7 +61,7 @@ When the queue runs low, Bender kicks in and adds songs automatically. It picks 
 | Genre | 35% | Searches Spotify for tracks matching the genre of what's been playing. |
 | Throwback | 30% | Resurfaces songs from past sessions played on the same day of the week. Credited to whoever originally queued them. |
 | Artist Search | 25% | Finds tracks by artists who've collaborated with the current seed artist. |
-| Top Tracks | 5% | The seed artist's most popular songs on Spotify. |
+| Artist Album Tracks | 5% | Songs from across the seed artist's discography. |
 | Album | 5% | Other tracks from the same album as the seed. |
 
 ### Nests (user-created rooms)
