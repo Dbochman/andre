@@ -64,7 +64,7 @@ BENDER_STRATEGY_WEIGHTS:
     genre: 35
     throwback: 30
     artist_search: 25
-    top_tracks: 5
+    artist_album_tracks: 5
     album: 5
 NESTS_ENABLED: true
 NEST_MAX_INACTIVE_MINUTES: 5

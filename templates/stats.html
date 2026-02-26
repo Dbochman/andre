@@ -173,7 +173,7 @@
                 <div class="label">Track Lookups</div>
             </div>
             <div class="card">
-                <div class="value">{{ spotify_api.today.top_tracks + spotify_api.today.album_tracks }}</div>
+                <div class="value">{{ spotify_api.today.artist_album_tracks + spotify_api.today.album_tracks }}</div>
                 <div class="label">Bender Queries</div>
             </div>
             <div class="card">
@@ -267,7 +267,7 @@
                     ('Search', spotify_api.today.search),
                     ('Track Info', spotify_api.today.track),
                     ('Artist Info', spotify_api.today.artist),
-                    ('Top Tracks', spotify_api.today.top_tracks),
+                    ('Artist Albums', spotify_api.today.artist_album_tracks),
                     ('Album Tracks', spotify_api.today.album_tracks),
                     ('Get Track', spotify_api.today.get_track),
                     ('Get Episode', spotify_api.today.get_episode),

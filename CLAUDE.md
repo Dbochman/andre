@@ -85,12 +85,14 @@ WebSocket via gevent-websocket. The `before_request` hook intercepts WebSocket u
 
 ### Bender (Auto-fill) Engine
 
-Spotify deprecated `/recommendations` and `/artists/{id}/related-artists` APIs (Nov 2024). The current approach uses:
-1. `artist_top_tracks()` - Get top tracks from seed artist
+Spotify deprecated `/recommendations` and `/artists/{id}/related-artists` (Nov 2024), then `/artists/{id}/top-tracks` and batch `GET /tracks` (Feb 2026). Search limit reduced from 50 to 10. The current approach uses:
+1. `artist_album_tracks()` + `album_tracks()` - Get tracks from seed artist's albums
 2. `album_tracks()` - Get other tracks from same album
-3. `search()` - Find artist collaborations
+3. `search()` - Find artist collaborations (paginated, 2x10)
 
 Seeds from: last-queued track → last-bender-track → now-playing → fallback.
+
+**Strategy weights** (default): genre 35, throwback 30, artist_search 25, artist_album_tracks 5, album 5. Bender search strategies paginate (2 pages of 10) since Spotify's search limit max is now 10.
 
 After song transitions, master_player pre-warms `BENDER|next-preview` via `_peek_next_fill_song()` and sends an explicit `playlist_update` message so clients always have fresh Bender preview data.
 
@@ -100,7 +102,7 @@ After song transitions, master_player pre-warms `BENDER|next-preview` via `_peek
 
 **User activity events**: `login`, `signup`, `song_add`, `vote`, `jam`, `airhorn`, `ws_connect`, `ws_disconnect`, `bender_fill`, `song_finish`
 
-**Spotify API tracking** (12 event types): `spotify_api_search`, `spotify_api_track`, `spotify_api_artist`, `spotify_api_top_tracks`, `spotify_api_album_tracks`, `spotify_api_get_track`, `spotify_api_get_episode`, `spotify_api_devices`, `spotify_api_transfer`, `spotify_api_status`, `spotify_api_rate_limited`, `spotify_api_error`. Instrumented at every Spotify API call site in `db.py` and `app.py`.
+**Spotify API tracking** (12 event types): `spotify_api_search`, `spotify_api_track`, `spotify_api_artist`, `spotify_api_artist_album_tracks`, `spotify_api_album_tracks`, `spotify_api_get_track`, `spotify_api_get_episode`, `spotify_api_devices`, `spotify_api_transfer`, `spotify_api_status`, `spotify_api_rate_limited`, `spotify_api_error`. Instrumented at every Spotify API call site in `db.py` and `app.py`.
 
 **Spotify OAuth tracking** (3 event types): `spotify_oauth_reconnect` (user clicked reconnect button), `spotify_oauth_refresh` (OAuth callback completed), `spotify_oauth_stale` (cached token missing/expired). Per-user breakdown available via sorted sets.
 

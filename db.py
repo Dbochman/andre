@@ -189,7 +189,7 @@ def parse_yt_duration(d):
 
 class DB(object):
     STRATEGY_WEIGHTS_DEFAULT = {
-        'genre': 35, 'throwback': 30, 'artist_search': 25, 'top_tracks': 5, 'album': 5,
+        'genre': 35, 'throwback': 30, 'artist_search': 25, 'artist_album_tracks': 5, 'album': 5,
     }
 
     # Maps strategy name to its Redis cache key suffix (bare keys, resolved via _cache_key())
@@ -197,7 +197,7 @@ class DB(object):
         'genre': 'BENDER|cache:genre',
         'throwback': 'BENDER|cache:throwback',
         'artist_search': 'BENDER|cache:artist-search',
-        'top_tracks': 'BENDER|cache:top-tracks',
+        'artist_album_tracks': 'BENDER|cache:artist-albums',
         'album': 'BENDER|cache:album',
     }
 
@@ -446,7 +446,7 @@ class DB(object):
     @property
     def _bender_fetch_limit(self):
         """Number of tracks to request from Spotify per cache fill."""
-        return 5 if self.nest_id != "main" else 20
+        return 5 if self.nest_id != "main" else 10
 
     def _fill_strategy_cache(self, strategy, seed_info):
         """Dispatch to the appropriate fetch method and cache results.
@@ -468,8 +468,8 @@ class DB(object):
             uris = self._fetch_genre_tracks(seed_info, market, limit)
         elif strategy == 'artist_search':
             uris = self._fetch_artist_search_tracks(seed_info, market, limit)
-        elif strategy == 'top_tracks':
-            uris = self._fetch_top_tracks(seed_info, market)
+        elif strategy == 'artist_album_tracks':
+            uris = self._fetch_artist_album_tracks(seed_info, market)
         elif strategy == 'album':
             uris = self._fetch_album_tracks(seed_info)
         else:
@@ -519,10 +519,18 @@ class DB(object):
             return []
         genre = random.choice(genres)
         try:
-            results = spotify_client.search(q='genre:"%s"' % genre, type='track',
-                                            limit=limit, market=market)
-            analytics.track(self._r, 'spotify_api_search')
-            return [t['uri'] for t in results.get('tracks', {}).get('items', [])]
+            # Paginate: fetch up to 2 pages of 10 (API max) to recover volume
+            all_uris = []
+            page_size = min(limit, 10)
+            for offset in range(0, limit, page_size):
+                results = spotify_client.search(q='genre:"%s"' % genre, type='track',
+                                                limit=page_size, offset=offset, market=market)
+                analytics.track(self._r, 'spotify_api_search')
+                uris = [t['uri'] for t in results.get('tracks', {}).get('items', [])]
+                all_uris.extend(uris)
+                if len(uris) < page_size:
+                    break  # No more results
+            return all_uris
         except Exception as e:
             if handle_spotify_exception(e):
                 return []
@@ -538,10 +546,18 @@ class DB(object):
         if not artist_name:
             return []
         try:
-            results = spotify_client.search(artist_name, limit=limit,
-                                            type='track', market=market)
-            analytics.track(self._r, 'spotify_api_search')
-            return [t['uri'] for t in results.get('tracks', {}).get('items', [])]
+            # Paginate: fetch up to 2 pages of 10 (API max) to recover volume
+            all_uris = []
+            page_size = min(limit, 10)
+            for offset in range(0, limit, page_size):
+                results = spotify_client.search(artist_name, limit=page_size,
+                                                type='track', offset=offset, market=market)
+                analytics.track(self._r, 'spotify_api_search')
+                uris = [t['uri'] for t in results.get('tracks', {}).get('items', [])]
+                all_uris.extend(uris)
+                if len(uris) < page_size:
+                    break
+            return all_uris
         except Exception as e:
             if handle_spotify_exception(e):
                 return []
@@ -549,22 +565,34 @@ class DB(object):
             logger.warning("Error searching for artist '%s': %s", artist_name, e)
             return []
 
-    def _fetch_top_tracks(self, seed_info, market):
-        """Get top tracks from the seed artist."""
+    def _fetch_artist_album_tracks(self, seed_info, market):
+        """Get tracks from the seed artist's albums (replaces removed top-tracks endpoint)."""
         if not seed_info:
             return []
         artist_id = seed_info.get('artist_id', '')
         if not artist_id:
             return []
         try:
-            result = spotify_client.artist_top_tracks(artist_id, country=market)
-            analytics.track(self._r, 'spotify_api_top_tracks')
-            return [t['uri'] for t in result.get('tracks', [])]
+            albums = spotify_client.artist_albums(artist_id, album_type='album,single',
+                                                  country=market, limit=5)
+            analytics.track(self._r, 'spotify_api_artist_album_tracks')
+            album_ids = [a['id'] for a in albums.get('items', [])]
+            if not album_ids:
+                return []
+            all_uris = []
+            for aid in album_ids[:3]:
+                try:
+                    result = spotify_client.album_tracks(aid)
+                    analytics.track(self._r, 'spotify_api_album_tracks')
+                    all_uris.extend([t['uri'] for t in result.get('items', [])])
+                except Exception:
+                    continue
+            return all_uris
         except Exception as e:
             if handle_spotify_exception(e):
                 return []
             analytics.track(self._r, 'spotify_api_error')
-            logger.warning("Error getting top tracks for artist %s: %s", artist_id, e)
+            logger.warning("Error getting artist albums for %s: %s", artist_id, e)
             return []
 
     def _fetch_album_tracks(self, seed_info):

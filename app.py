@@ -1317,7 +1317,7 @@ def search_spotify():
     sp = spotipy.Spotify(auth=token)
 
     try:
-        search_result = sp.search(q, 25)
+        search_result = sp.search(q, 10)
         analytics.track(d._r, 'spotify_api_search')
     except spotipy.exceptions.SpotifyException as e:
         if handle_spotify_exception(e):

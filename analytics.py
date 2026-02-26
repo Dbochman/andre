@@ -123,7 +123,7 @@ def get_known_user_count(r):
 # Spotify API event types tracked by the system
 _SPOTIFY_API_EVENTS = (
     'spotify_api_search', 'spotify_api_track', 'spotify_api_artist',
-    'spotify_api_top_tracks', 'spotify_api_album_tracks',
+    'spotify_api_artist_album_tracks', 'spotify_api_album_tracks',
     'spotify_api_get_track', 'spotify_api_get_episode',
     'spotify_api_devices', 'spotify_api_transfer', 'spotify_api_status',
     'spotify_api_rate_limited', 'spotify_api_error',
