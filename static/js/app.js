@@ -1268,6 +1268,32 @@ function song_search_submit(ev){
     });
 }
 
+function spotify_multi_track_fetch(trackIds) {
+    // Fetch multiple tracks individually and render as a track list
+    var promises = trackIds.map(function(id) {
+        return $.ajax({
+            url: 'https://api.spotify.com/v1/tracks/' + id,
+            dataType: 'json',
+            headers: {Authorization: "Bearer " + search_token}
+        });
+    });
+    $.when.apply($, promises).then(function() {
+        var tracks = [];
+        if (promises.length === 1) {
+            tracks.push(arguments[0]);
+        } else {
+            for (var i = 0; i < arguments.length; i++) {
+                tracks.push(arguments[i][0]);
+            }
+        }
+        renderTrackList(tracks, 'Pasted Tracks');
+    }).fail(function() {
+        $('#spotify-results').append(
+            '<div class="search-item"><div class="text"><h4>Error loading tracks</h4></div></div>'
+        );
+    });
+}
+
 function uri_search_submit(ev){
     ev.preventDefault();
     var input = $(this).find('input').val();
@@ -1279,6 +1305,22 @@ function uri_search_submit(ev){
     // Match open.spotify.com URLs: track, album, playlist
     var spotify_url_re = /https?:\/\/open\.spotify\.com\/(track|album|playlist)\/([\w]+)/;
     var spotify_uri_re = /^spotify:/;
+
+    // Multi-line paste: detect multiple Spotify track URLs (copied from Spotify app)
+    var lines = input.trim().split(/[\n\r]+/);
+    var spotify_track_url_re = /https?:\/\/open\.spotify\.com\/track\/([\w]+)/;
+    if (lines.length > 1) {
+        var trackIds = [];
+        for (var i = 0; i < lines.length; i++) {
+            var m = lines[i].trim().match(spotify_track_url_re);
+            if (m) trackIds.push(m[1]);
+        }
+        if (trackIds.length > 1) {
+            spotify_multi_track_fetch(trackIds);
+            return;
+        }
+    }
+
     var spotifyUrlMatch = input.match(spotify_url_re);
     if (spotifyUrlMatch) {
         var urlType = spotifyUrlMatch[1];
