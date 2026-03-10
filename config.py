@@ -85,20 +85,16 @@ ENV_OVERRIDES = [
 
 def __read_conf(*files):
     for f in files:
-        print(f)
         try:
             with open(f) as fh:
                 data = yaml.safe_load(fh)
             if data:
-                print(data)
                 for k, v in data.items():
-                    print(k, v)
                     if k == 'ALLOWED_EMAIL_DOMAINS':
                         v = _normalize_allowed_email_domains(v)
                     setattr(CONF, k, v)
             logger.debug('Loaded file "{0}"'.format(f))
         except Exception as e:
-            print("failed", e)
             logger.debug('Failed to load file "{0}" ({1})'.format(f, str(e)))
 
     # Apply environment variable overrides
@@ -138,7 +134,5 @@ def __read_conf(*files):
     if hasattr(CONF, 'ALLOWED_EMAIL_DOMAINS'):
         setattr(CONF, 'ALLOWED_EMAIL_DOMAINS',
                 _normalize_allowed_email_domains(getattr(CONF, 'ALLOWED_EMAIL_DOMAINS')))
-
-    print("CONF", CONF)
 
 __read_conf(*get_config_filenames())

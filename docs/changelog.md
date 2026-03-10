@@ -4,6 +4,18 @@ All notable changes to EchoNest are documented in this file.
 
 ---
 
+## 2026-03-10
+
+### Bug Fix
+
+- **Queue Song TTL Removal** — Queue-scoped per-song keys no longer rely on 24-hour TTLs. Active queue songs, vote sets, jams, throwback jam markers, and comments are now cleaned up explicitly when a song finishes, is removed, the queue is cleared, or the nest is deleted. Added a migration script for active songs so paused queues survive rollout without waiting for old TTLs to age out.
+
+- **Playback Cleanup Hardening** — `master_player()` now completes songs by queue item ID instead of `trackid`, explicitly cleans up active song state on stale recovery and short-track paths, and uses bounded retry backoff when empty-queue Bender fill fails.
+
+- **Nest Cleanup Queue Counting** — `nest_cleanup_loop()` now uses effective playable queue size instead of raw `ZCARD`, so stale queue members do not keep an otherwise inactive nest alive.
+
+---
+
 ## 2026-02-24
 
 ### Bug Fix

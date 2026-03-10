@@ -79,9 +79,9 @@ Called by the player after each song transition.
 
 ### `_purge_stale_queue_entries()` — Self-Healing
 
-`QUEUE|{id}` hashes have a 24-hour TTL but the priority queue sorted set does not. If the system is paused >24h, the metadata expires while the IDs remain — creating ghost entries that `zcard` counts as real songs.
+Queue-scoped song data is now explicitly deleted rather than TTL-driven, so stale queue entries should be rare. This helper remains as a safety net: if a sorted-set member survives without a corresponding `QUEUE|{id}` hash, it is removed before queue depth or rendering logic trusts it.
 
-This helper scans the sorted set, checks which IDs have lost their hash, and removes them via `ZREM`. Called by `get_queued()` and `backfill_queue()` so depth checks always reflect real songs. `pop_next()` also independently skips entries with missing `src` field.
+This helper scans the sorted set, checks which IDs have lost their hash, and removes them via `ZREM`. Called by `get_queued()` and `ensure_queue_depth()` so depth checks always reflect real songs. `pop_next()` also independently skips entries with missing `src` field.
 
 ## Player Interactions
 

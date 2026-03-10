@@ -134,7 +134,8 @@ Backbone.js + jQuery served as static files. Main logic in `static/js/app.js`. N
 ### Redis Data
 - Strings decoded automatically (`decode_responses=True`)
 - Binary objects (datetimes) stored via base64-wrapped pickle (`pickle_dump_b64`/`pickle_load_b64` in `db.py`)
-- `QUEUE|{id}` hashes have a 24-hour TTL; the priority queue sorted set does not. `_purge_stale_queue_entries()` removes song IDs from the sorted set when their hash has expired — called by `get_queued()` and `backfill_queue()` so `zcard`-based depth checks reflect real songs. `pop_next()` also skips entries with missing `src` field. Without this, pausing >24h leaves ghost IDs that block Bender backfill.
+- Queue-scoped per-song keys (`QUEUE|{id}`, `QUEUE|VOTE|{id}`, `QUEUEJAM|{id}`, `QUEUEJAM_TB|{id}`, `COMMENTS|{id}`) have no TTL. They are explicitly deleted when a song finishes, is removed, the queue is cleared, or the nest is deleted.
+- `_purge_stale_queue_entries()` remains as a safety net for queue/hash mismatches and is used when calculating effective queue depth. `pop_next()` also skips entries with missing `src` field.
 
 ### Spotify Token Handling
 Newer spotipy versions return dict from `get_access_token()`. Code handles both string and dict formats.
