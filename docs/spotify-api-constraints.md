@@ -55,6 +55,7 @@ The "reconnect spotify" button in the Other tab now does this automatically (del
 - Dev mode has lower limits than extended quota
 - `Retry-After` header on 429 responses
 - EchoNest already handles this via `is_spotify_rate_limited()` in `db.py`
+- Empty-queue Bender refill retries are also backstopped with bounded linear backoff (`2s`, `4s`, `6s`, ... capped at `30s`) so Spotify or recommendation failures do not hot-loop the player. See [`docs/api-usage-and-backoff.md`](/Users/dylanbochman/repos/EchoNest/docs/api-usage-and-backoff.md).
 
 ## Web Playback SDK — Investigated, Not a Workaround
 

@@ -77,6 +77,20 @@ Called by the player after each song transition.
 4. `get_fill_song()` consumes the preview first, so the previewed track flows into the queue
 5. Respects `MAX_BENDER_MINUTES` streak limit
 
+### Empty-Queue Retry Backoff
+
+If the queue is empty and `master_player()` cannot get a fill song into the queue, it retries with bounded linear backoff instead of hot-looping.
+
+Exact delay formula:
+
+```python
+delay = min(30, max(1, failures * 2))
+```
+
+So repeated failures sleep for `2s`, `4s`, `6s`, and so on, capped at `30s`. The counter resets after the first successful fill.
+
+See [`docs/api-usage-and-backoff.md`](/Users/dylanbochman/repos/EchoNest/docs/api-usage-and-backoff.md) for the broader external-API and rate-limit behavior.
+
 ### `_purge_stale_queue_entries()` — Self-Healing
 
 Queue-scoped song data is now explicitly deleted rather than TTL-driven, so stale queue entries should be rare. This helper remains as a safety net: if a sorted-set member survives without a corresponding `QUEUE|{id}` hash, it is removed before queue depth or rendering logic trusts it.
