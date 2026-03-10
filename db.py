@@ -257,6 +257,40 @@ class DB(object):
             self._r.zrem(queue_key, *stale)
         return len(song_ids) - len(stale)
 
+    def _song_state_keys(self, song_id):
+        sid = str(song_id)
+        return [
+            self._key('QUEUE|{0}'.format(sid)),
+            self._key('QUEUE|VOTE|{0}'.format(sid)),
+            self._key('QUEUEJAM|{0}'.format(sid)),
+            self._key('QUEUEJAM_TB|{0}'.format(sid)),
+            self._key('COMMENTS|{0}'.format(sid)),
+        ]
+
+    def _delete_song_state(self, song_id, client=None):
+        client = client or self._r
+        client.delete(*self._song_state_keys(song_id))
+
+    def _clear_now_playing_state(self, client=None):
+        client = client or self._r
+        client.delete(
+            self._key('MISC|now-playing'),
+            self._key('MISC|current-done'),
+            self._key('MISC|started-on'),
+            self._key('MISC|now-playing-done'),
+        )
+
+    def _complete_song(self, song):
+        if not song or not song.get('id'):
+            return
+        self.log_finished_song(song)
+        self._delete_song_state(song['id'])
+
+    def queue_size(self, purge_stale=False):
+        if purge_stale:
+            return self._purge_stale_queue_entries()
+        return self._r.zcard(self._key('MISC|priority-queue'))
+
     def _check_queue_depth(self, client=None):
         """Raise RuntimeError if a non-main nest's queue has reached max depth."""
         if self.nest_id == "main":
@@ -759,7 +793,6 @@ class DB(object):
                         self.add_jam(self._key('QUEUEJAM|{0}'.format(new_id)), original)
                         tb_key = self._key('QUEUEJAM_TB|{0}'.format(new_id))
                         self._r.sadd(tb_key, original)
-                        self._r.expire(tb_key, 24*60*60)
                         self._r.hdel(self._key('BENDER|throwback-jam-pending'), trackid)
                     added += 1
                 else:
@@ -935,27 +968,39 @@ class DB(object):
                 done = pickle_load_b64(finish_on)
             else:
                 if song and song.get('id'):
-                    self.log_finished_song(song)
+                    self._complete_song(song)
+                    self._clear_now_playing_state()
 
                 song = self.pop_next()
                 if not song:
                     logger.debug("streak start set %s"%self._r.setnx(self._key('MISC|bender_streak_start'), pickle_dump_b64(self.player_now())))
                     if (not CONF.USE_BENDER) or (self.bender_streak() <= CONF.MAX_BENDER_MINUTES * 60):
                         got_song = False
+                        failures = 0
                         while not got_song:
                             try:
-                                song = self.get_fill_song()
-                                self.add_spotify_song(*song, scrobble=False)
+                                fill_song = self.get_fill_song()
+                                if (not fill_song or len(fill_song) != 2
+                                        or not fill_song[0] or not fill_song[1]):
+                                    raise RuntimeError("No fill song available")
+                                self.add_spotify_song(*fill_song, scrobble=False)
                                 got_song = True
+                                failures = 0
                             except Exception:
-                                logger.warn("couldn't add spotify song:" + str(song) )
-                                logger.warn(traceback.format_exc())
+                                failures += 1
+                                delay = min(30, max(1, failures * 2))
+                                logger.warning(
+                                    "couldn't add spotify song (attempt %d, retrying in %ss): %s",
+                                    failures, delay, traceback.format_exc())
+                                time.sleep(delay)
                                 continue
                         continue
                     else:
                         time.sleep(0.5)
                         continue
                 if song['duration'] < 5:
+                    self._complete_song(song)
+                    self._clear_now_playing_state()
                     continue
                 done = self.player_now() + \
                     datetime.timedelta(seconds=song['duration'],
@@ -974,7 +1019,7 @@ class DB(object):
                 pass
             self._msg('playlist_update')
 
-            id = song['trackid']
+            track_id = song['trackid']
             expire_on = int((done - self.player_now()).total_seconds())
 
             self._r.setex(self._key('MISC|current-done'),
@@ -1005,10 +1050,9 @@ class DB(object):
                 self._add_now(1)
                 time.sleep(1)
                 remaining = int((done-self.player_now()).total_seconds())
-                self._msg('pp|{0}|{1}|{2}'.format(song['src'], id, song['duration'] - remaining))
-            self._r.delete(self._key('MISC|current-done'))
-            self._r.delete(self._key('QUEUE|VOTE|{0}'.format(id)))
-            self._r.delete(self._key('QUEUE|{0}'.format(id)))
+                self._msg('pp|{0}|{1}|{2}'.format(song['src'], track_id, song['duration'] - remaining))
+            self._complete_song(song)
+            self._clear_now_playing_state()
 
     def player_now(self):
         t = self._r.get(self._key('MISC|player-now'))
@@ -1132,7 +1176,6 @@ class DB(object):
                     self.set_song_in_queue(id_value, song, client=pipe)
                     vote_key = self._key('QUEUE|VOTE|{0}'.format(id_value))
                     pipe.sadd(vote_key, userid)
-                    pipe.expire(vote_key, 24*60*60)
                     pipe.zadd(queue_key, {str(id_value): score})
                     pipe.execute()
                     break
@@ -1446,7 +1489,6 @@ class DB(object):
             self.remove_jam(queued_song_jams_key, userid)
         else:
             self.add_jam(queued_song_jams_key, userid)
-        self._r.expire(queued_song_jams_key, 24*60*60)
 
         if self._r.zrank(self._key('MISC|priority-queue'), id) is not None:
             self._msg('playlist_update')
@@ -1462,7 +1504,6 @@ class DB(object):
         self._check_nest_active()
         comments_key = self._key('COMMENTS|{0}'.format(id))
         self._r.zadd(comments_key, {"{0}||{1}".format(userid.lower(), text): int(time.time())})
-        self._r.expire(comments_key, 24*60*60)
         logger.info('comment by {0} at {1}: "{2}"'.format(userid, time.ctime(), text))
         self._msg('playlist_update')
 
@@ -1504,7 +1545,6 @@ class DB(object):
             self.add_jam(self._key('QUEUEJAM|{0}'.format(newId)), original_user)
             tb_key = self._key('QUEUEJAM_TB|{0}'.format(newId))
             self._r.sadd(tb_key, original_user)
-            self._r.expire(tb_key, 24*60*60)
         else:
             # Non-throwback: jam the queuer as usual
             self.jam(newId, userid)
@@ -1563,16 +1603,35 @@ class DB(object):
                 serialized_data[k] = str(v) if not isinstance(v, str) else v
         client = client or self._r
         client.hset(key, mapping=serialized_data)
-        client.expire(key, 24*60*60)
 
     def nuke_queue(self, email):
         self._check_nest_active()
-        self._r.zremrangebyrank(self._key('MISC|priority-queue'), 0, -1)
+        queue_key = self._key('MISC|priority-queue')
+        while True:
+            pipe = self._r.pipeline()
+            try:
+                pipe.watch(queue_key)
+                song_ids = pipe.zrange(queue_key, 0, -1)
+
+                pipe.multi()
+                if song_ids:
+                    keys = []
+                    for sid in song_ids:
+                        keys.extend(self._song_state_keys(sid))
+                    pipe.delete(*keys)
+                pipe.delete(queue_key)
+                pipe.execute()
+                break
+            except redis.WatchError:
+                continue
+            finally:
+                pipe.reset()
         self._msg('playlist_update')
 
     def kill_song(self, id, email):
         self._check_nest_active()
         self._r.zrem(self._key('MISC|priority-queue'), id)
+        self._delete_song_state(id)
         self._msg('playlist_update')
 
     def get_additional_src(self):
@@ -1651,7 +1710,7 @@ class DB(object):
         while True:
             song = self._r.zrange(self._key('MISC|priority-queue'), 0, 0)
             if not song:
-                self._r.delete(self._key('MISC|now-playing'))
+                self._clear_now_playing_state()
                 return {}
             song = song[0]
             self._r.zrem(self._key('MISC|priority-queue'), song)
@@ -1673,9 +1732,7 @@ class DB(object):
                 logger.warning("Skipping song %s with missing data (keys: %s)", song, list(data.keys()))
                 continue
 
-            self._r.expire(self._key('QUEUE|{0}'.format(song)), 3*60*60)
             self._r.setex(self._key('MISC|now-playing'), 2*60*60, song)
-            self._r.setex(self._key('MISC|now-playing-done'), data['duration'], song)
             self._msg('now_playing_update')
             if self.nest_id == "main":
                 slack.notify_now_playing(data)
@@ -1705,7 +1762,7 @@ class DB(object):
             rv = self.get_song_from_queue(song)
             if not rv or not rv.get('trackid'):
                 # Song data was cleaned up but MISC|now-playing is stale
-                self._r.delete(self._key('MISC|now-playing'))
+                self._clear_now_playing_state()
                 rv = {}
             else:
                 p_endtime = self._r.get(self._key('MISC|current-done'))
@@ -1843,7 +1900,7 @@ class DB(object):
             song_data = self._r.hgetall(self._key('QUEUE|{}'.format(now_playing_id)))
             if not song_data or not song_data.get('trackid'):
                 # Song data is gone, clean up the stale reference
-                self._r.delete(self._key('MISC|now-playing'))
+                self._clear_now_playing_state()
                 logger.info("unpause: cleared stale now-playing %s (no song data)", now_playing_id)
         self._msg('now_playing_update')
         if self.nest_id == "main":

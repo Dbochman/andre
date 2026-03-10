@@ -98,9 +98,9 @@ def nest_cleanup_loop(nest_manager=None, interval_seconds=60):
                 # Count active members (prunes stale entries from MEMBERS set)
                 member_count = count_active_members(nest_manager._r, nest_id)
 
-                # Count queue size
-                queue_key = f"NEST:{nest_id}|MISC|priority-queue"
-                queue_size = nest_manager._r.zcard(queue_key)
+                # Count playable queue entries, not just raw sorted-set members.
+                nest_db = DB(nest_id=nest_id, init_history_to_redis=False, redis_client=nest_manager._r)
+                queue_size = nest_db.queue_size(purge_stale=True)
 
                 if should_delete_nest(metadata, member_count, queue_size, now):
                     logger.info(
